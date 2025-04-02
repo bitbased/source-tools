@@ -2,7 +2,7 @@
   "name": "source-tools",
   "displayName": "Source Tools",
   "description": "Source control tools",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "bitbased",
   "engines": {
     "vscode": "^1.50.0"
@@ -35,6 +35,11 @@
         "icon": "$(go-to-editing-session)"
       },
       {
+        "command": "sourceTools.diffTrackedFile",
+        "title": "SourceTools: Diff Tracked File",
+        "icon": "$(go-to-editing-session)"
+      },
+      {
         "command": "sourceTools.toggleTreeColor",
         "title": "SourceTools: Toggle File Color",
         "icon": "$(symbol-color)"
@@ -45,6 +50,14 @@
         {
           "command": "sourceTools.gitTrackingOptions",
           "when": "view == workbench.explorer.fileView",
+          "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "sourceTools.diffTrackedFile",
+          "when": "editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && sourceTools.trackingBaseRef != '' && !isInDiffEditor && !resourceDiffEditorPreview",
+          "arguments": [{"uri": "${activeEditor}", "resource": "${resource}"}],
           "group": "navigation"
         }
       ],

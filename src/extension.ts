@@ -42,6 +42,9 @@ class VirtualGitDiff {
     // Let's log an initial message
     console.log('[SourceTools] Extension constructor called.');
     console.log(`[SourceTools] Loaded baseRef from storage: ${this.baseRef}`);
+   // Initialize the context variable for when clauses
+   vscode.commands.executeCommand('setContext', 'sourceTools.trackingBaseRef', this.baseRef);
+   console.log(`[SourceTools] Initialized context variable: sourceTools.trackingBaseRef = ${this.baseRef}`);
     this.initDecorations();
   }
 
@@ -183,6 +186,7 @@ class VirtualGitDiff {
 
     this.context.subscriptions.push(
       vscode.commands.registerCommand('sourceTools.gitTrackingOptions', () => this.selectBaseRef()),
+      vscode.commands.registerCommand('sourceTools.diffTrackedFile', () => this.diffTrackedFile()),
       vscode.commands.registerCommand('sourceTools.openChangedFiles', (force) => this.openChangedFiles(force)),
       vscode.commands.registerCommand('sourceTools.openTrackedFiles', (force) => this.openTrackedFiles(force)),
       vscode.commands.registerCommand('sourceTools.toggleTreeColor', async () => {
@@ -526,7 +530,8 @@ class VirtualGitDiff {
       { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
       { label: this.useTreeColor ? 'Disable file color' : 'Enable file color', description: 'Toggle tracking colors in file tree' },
       { label: 'Open tracked files', description: trackedFilesCount > 0 ? `Open ${trackedFilesCount} tracked file changes` : 'Open tracked file changes' },
-      { label: 'Open changed files', description: changedFilesCount > 0 ? `Open ${changedFilesCount} changed files since last commit` : 'Open changed files since last commit' }
+      { label: 'Open changed files', description: changedFilesCount > 0 ? `Open ${changedFilesCount} changed files since last commit` : 'Open changed files since last commit' },
+      { label: 'Diff tracked file', description: 'Diff current file against tracked ref' }
     ];
 
     // Add current base ref to options if it exists and isn't already in the list
@@ -609,6 +614,9 @@ class VirtualGitDiff {
     } else if (input === 'Open changed files') {
       vscode.commands.executeCommand('sourceTools.openChangedFiles', true);
       return;
+    } else if (input === 'Diff tracked file') {
+      vscode.commands.executeCommand('sourceTools.diffTrackedFile', true);
+      return;
     }
 
     this.baseRef = input.trim();
@@ -616,6 +624,10 @@ class VirtualGitDiff {
     // Persist the base ref to context
     await this.context.workspaceState.update('sourceTools.trackingBaseRef', this.baseRef);
     console.log(`[SourceTools] Persisted baseRef to storage: ${this.baseRef}`);
+
+   // Update the VS Code context for when clauses
+   await vscode.commands.executeCommand('setContext', 'sourceTools.trackingBaseRef', this.baseRef);
+   console.log(`[SourceTools] Updated context variable for when clauses: sourceTools.trackingBaseRef = ${this.baseRef}`);
 
     if (!this.baseRef) {
       vscode.window.showInformationMessage('Virtual Git Diff disabled.');
@@ -798,6 +810,84 @@ class VirtualGitDiff {
     } catch (error) {
       console.error(`[SourceTools] Error opening changed files: ${error}`);
       vscode.window.showErrorMessage(`Error opening changed files: ${error}`);
+    }
+  }
+
+  private async diffTrackedFile() {
+    console.log('[SourceTools] diffTrackedFile called.');
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showInformationMessage('No active editor to diff.');
+      return;
+    }
+
+    if (!this.baseRef) {
+      vscode.window.showInformationMessage('No base ref set. Please set a base ref first.');
+      return;
+    }
+
+    const filePath = editor.document.uri.fsPath;
+    const gitRoot = this.getGitRepoRoot(filePath);
+
+    if (!gitRoot) {
+      vscode.window.showInformationMessage('File is not in a Git repository.');
+      return;
+    }
+
+    try {
+      const relativePath = path.relative(gitRoot, filePath);
+      console.log(`[SourceTools] Git root: ${gitRoot}, Relative path: ${relativePath}`);
+
+      // Dynamically resolve base ref for this file
+      const resolvedRef = await this.resolveRefAsync(this.baseRef, gitRoot);
+      if (!resolvedRef) {
+        vscode.window.showErrorMessage('Could not resolve base reference.');
+        return;
+      }
+
+      // Get content from the base ref
+      const baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot);
+
+      // If the file doesn't exist in the base ref
+      if (baseContentResult.status !== 0) {
+        vscode.window.showInformationMessage('File does not exist in the base reference.');
+        return;
+      }
+
+      // Create a title for the diff view
+      const title = `${path.basename(filePath)} (${this.baseRef})`;
+
+      // Create a virtual document URI
+      const baseContent = baseContentResult.stdout;
+      const virtualDocumentUri = vscode.Uri.parse(`sourcetools-diff:/${path.basename(filePath)}?${Date.now()}`);
+
+      // Register a content provider for the virtual document
+      const contentProvider = vscode.workspace.registerTextDocumentContentProvider('sourcetools-diff', {
+        provideTextDocumentContent: (uri: vscode.Uri) => {
+          return baseContent;
+        }
+      });
+
+      // Add the content provider to subscriptions for cleanup
+      this.context.subscriptions.push(contentProvider);
+
+      // Open diff view with current editor on the left
+      await vscode.commands.executeCommand(
+        'vscode.diff',
+        virtualDocumentUri,
+        editor.document.uri,
+        title
+      );
+
+      // Dispose the content provider after a delay to ensure the diff view has loaded
+      setTimeout(() => {
+        contentProvider.dispose();
+      }, 30000); // 30 seconds
+
+    } catch (error) {
+      console.error(`[SourceTools] Error creating diff view: ${error}`);
+      vscode.window.showErrorMessage(`Error creating diff view: ${error}`);
     }
   }
 
