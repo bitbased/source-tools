@@ -4,6 +4,8 @@
 [![Installs](https://img.shields.io/badge/installs-beta-orange.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools)
 [![Rating](https://img.shields.io/badge/rating-beta-yellow.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools&ssr=false#review-details)
 
+> **Note:** This extension is currently in early development. It may not perform efficiently with large repositories or large files due to the nature of its diff processing.
+
 Source Tools enhances your git workflow by providing visual indicators of changes in your code, helping you track modifications since a specific git reference point.
 
 ## Features
