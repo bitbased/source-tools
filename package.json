@@ -13,6 +13,9 @@
   "activationEvents": [
     "onStartupFinished"
   ],
+  "repository": {
+    "url": "https://github.com/bitbased/source-tools"
+  },
   "main": "./out/extension.js",
   "contributes": {
     "commands": [

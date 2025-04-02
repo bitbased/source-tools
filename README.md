@@ -10,13 +10,14 @@ Source Tools enhances your git workflow by providing visual indicators of change
 
 ### 🔄 Git Change Tracking
 
-Source Tools allows you to visually track code changes against any git reference (branch, commit, tag):
+Source Tools allows you to visually track code changes against **any** git reference (branch, commit, tag) - providing more flexibility than VS Code's built-in git functionality:
 
 - **Line-level indicators** show added, modified, and removed lines
 - **File explorer badges** show new and modified files
 - **Flexible base ref selection** - track against any branch, commit, or automatic detection
+- **Compatible with other git tools** - uses the leftmost gutter, allowing you to see Source Tools and GitHub/GitLens indicators simultaneously
 
-<!-- ![Feature Screenshot] (resources/screenshot.png) -->
+![Feature Screenshot](resources/screenshot.png)
 
 ### 📑 Quick File Access
 
