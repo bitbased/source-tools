@@ -1,0 +1,70 @@
+{
+  "name": "source-tools",
+  "displayName": "Source Tools",
+  "description": "Source control tools",
+  "version": "0.0.1",
+  "publisher": "bitbased",
+  "engines": {
+    "vscode": "^1.50.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sourceTools.gitTrackingOptions",
+        "title": "Source Tools: Git Tracking",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "sourceTools.openTrackedFiles",
+        "title": "SourceTools: Open Tracked Files",
+        "icon": "$(go-to-editing-session)"
+      },
+      {
+        "command": "sourceTools.openChangedFiles",
+        "title": "SourceTools: Open Changed Files",
+        "icon": "$(go-to-editing-session)"
+      },
+      {
+        "command": "sourceTools.toggleTreeColor",
+        "title": "SourceTools: Toggle File Color",
+        "icon": "$(symbol-color)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "sourceTools.gitTrackingOptions",
+          "when": "view == workbench.explorer.fileView",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "sourceTools.toggleTreeColor",
+          "when": "false"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p . --skipLibCheck",
+    "watch": "tsc -w -p .",
+    "package": "npm run compile && vsce package --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.50.0",
+    "typescript": "^4.0.0"
+  },
+  "dependencies": {
+    "@types/diff": "^7.0.2",
+    "diff": "^7.0.0"
+  }
+}

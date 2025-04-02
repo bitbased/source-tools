@@ -1,0 +1,45 @@
+# Source files
+.vscode/**
+.vscode-test/**
+src/**
+*.vsix
+
+# Development files
+.gitignore
+.yarnrc
+.eslintrc.json
+.eslintignore
+.prettierrc
+.prettierignore
+tsconfig.json
+webpack.config.js
+rollup.config.js
+esbuild.js
+vite.config.js
+jest.config.js
+**/*.map
+**/*.ts
+
+# Documentation and examples
+images/**
+docs/**
+examples/**
+.github/**
+
+# Test files
+test/**
+**/*.spec.ts
+**/*.test.ts
+
+# Other files
+.editorconfig
+.npmrc
+CONTRIBUTING.md
+README.md
+CHANGELOG.md
+DEVELOPMENT.md
+
+# Keep any release notes and the main README
+!README.md
+!CHANGELOG.md
+!LICENSE*
