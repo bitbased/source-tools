@@ -247,7 +247,7 @@ class VirtualGitDiff {
     }
   }
 
-  private runGitCommand(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; status: number }> {
+  private runGitCommand(args: string[], cwd: string, trimOutput = true): Promise<{ stdout: string; stderr: string; status: number }> {
     return new Promise((resolve) => {
       const { spawn } = require('child_process');
       const proc = spawn('git', args, { cwd, shell: true });
@@ -259,7 +259,7 @@ class VirtualGitDiff {
       proc.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
 
       proc.on('close', (code: number) => {
-        resolve({ stdout: stdout.trim(), stderr: stderr.trim(), status: code ?? 0 });
+        resolve({ stdout: trimOutput ? stdout.trim() : stdout, stderr: stderr.trim(), status: code ?? 0 });
       });
     });
   }
@@ -630,9 +630,9 @@ class VirtualGitDiff {
     await this.context.workspaceState.update('sourceTools.trackingBaseRef', this.baseRef);
     console.log(`[SourceTools] Persisted baseRef to storage: ${this.baseRef}`);
 
-   // Update the VS Code context for when clauses
-   await vscode.commands.executeCommand('setContext', 'sourceTools.trackingBaseRef', this.baseRef);
-   console.log(`[SourceTools] Updated context variable for when clauses: sourceTools.trackingBaseRef = ${this.baseRef}`);
+    // Update the VS Code context for when clauses
+    await vscode.commands.executeCommand('setContext', 'sourceTools.trackingBaseRef', this.baseRef);
+    console.log(`[SourceTools] Updated context variable for when clauses: sourceTools.trackingBaseRef = ${this.baseRef}`);
 
     if (!this.baseRef) {
       vscode.window.showInformationMessage('Virtual Git Diff disabled.');
@@ -852,7 +852,7 @@ class VirtualGitDiff {
       }
 
       // Get content from the base ref
-      const baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot);
+      const baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot, false);
 
       // If the file doesn't exist in the base ref
       if (baseContentResult.status !== 0) {
@@ -1320,7 +1320,7 @@ class VirtualGitDiff {
       const currentContent = editor.document.getText();
 
       try {
-        const baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot);
+        const baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot, false);
 
         // If status is not 0, the file might be newly added and not exist in the base ref
         if (baseContentResult.status !== 0) {
