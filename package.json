@@ -23,7 +23,10 @@
       {
         "command": "sourceTools.gitTrackingOptions",
         "title": "Source Tools: Git Tracking",
-        "icon": "$(git-compare)"
+        "icon": {
+          "light": "resources/light/tracking-base.svg",
+          "dark": "resources/dark/tracking-base.svg"
+        }
       },
       {
         "command": "sourceTools.openTrackedFiles",
@@ -38,7 +41,10 @@
       {
         "command": "sourceTools.diffTrackedFile",
         "title": "SourceTools: Diff Tracked File",
-        "icon": "$(go-to-editing-session)"
+        "icon": {
+          "light": "resources/light/tracking-compare.svg",
+          "dark": "resources/dark/tracking-compare.svg"
+        }
       },
       {
         "command": "sourceTools.toggleTreeColor",
@@ -58,7 +64,8 @@
         {
           "command": "sourceTools.diffTrackedFile",
           "when": "editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && sourceTools.trackingBaseRef != '' && !isInDiffEditor && !resourceDiffEditorPreview",
-          "arguments": [{"uri": "${activeEditor}", "resource": "${resource}"}],
+          "alt": "sourceTools.gitTrackingOptions",
+          "arguments": ["${activeEditor}"],
           "group": "navigation"
         }
       ],

@@ -185,13 +185,18 @@ class VirtualGitDiff {
     console.log('[SourceTools] Activating extension...');
 
     this.context.subscriptions.push(
-      vscode.commands.registerCommand('sourceTools.gitTrackingOptions', () => this.selectBaseRef()),
-      vscode.commands.registerCommand('sourceTools.diffTrackedFile', () => this.diffTrackedFile()),
+      vscode.commands.registerCommand('sourceTools.gitTrackingOptions', (...args) => {
+        console.log('>>> sourceTools.gitTrackingOptions', args);
+        this.selectBaseRef()
+      }),
+      vscode.commands.registerCommand('sourceTools.diffTrackedFile', (...args) => {
+        console.log('>>> sourceTools.diffTrackedFile', args);
+        this.diffTrackedFile()
+      }),
       vscode.commands.registerCommand('sourceTools.openChangedFiles', (force) => this.openChangedFiles(force)),
       vscode.commands.registerCommand('sourceTools.openTrackedFiles', (force) => this.openTrackedFiles(force)),
       vscode.commands.registerCommand('sourceTools.toggleTreeColor', async () => {
         this.useTreeColor = !this.useTreeColor;
-        // can this setting be per workspace?!!!
         await this.context.workspaceState.update('sourceTools.useTreeColor', this.useTreeColor);
         this.scheduleFileExplorerUpdate(true);
       }),
@@ -1132,7 +1137,6 @@ class VirtualGitDiff {
     }
   }
 
-  // this is treating a new line, followed by a line change as a removal and an addition, instead of a modification!!!
   private processDiffResult(diffResult: Diff.Change[]): { added: DiffRange[]; removed: vscode.DecorationOptions[]; changed: vscode.DecorationOptions[]; created: DiffRange[] } {
     console.log('[SourceTools] processDiffResult called.');
 

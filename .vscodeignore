@@ -3,6 +3,7 @@
 .vscode-test/**
 src/**
 *.vsix
+*.sketch
 
 # Development files
 .gitignore
