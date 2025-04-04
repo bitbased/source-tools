@@ -4,6 +4,8 @@
 src/**
 *.vsix
 *.sketch
+**/screenshot.png
+**/screenshot*.png
 
 # Development files
 .gitignore
