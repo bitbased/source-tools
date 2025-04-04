@@ -2,7 +2,7 @@
   "name": "source-tools",
   "displayName": "Source Tools",
   "description": "Track code changes against any git reference (not just the current branch) with visual indicators that work alongside built-in git features",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "bitbased",
   "engines": {
     "vscode": "^1.50.0"
@@ -39,6 +39,22 @@
         "icon": "$(go-to-editing-session)"
       },
       {
+        "command": "sourceTools.diffFileSnapshot",
+        "title": "SourceTools: Diff File Snapshot",
+        "icon": {
+          "light": "resources/light/snapshot-compare.svg",
+          "dark": "resources/dark/snapshot-compare.svg"
+        }
+      },
+      {
+        "command": "sourceTools.snapshotTrackingOptions",
+        "title": "SourceTools: Snapshot Tracking",
+        "icon": {
+          "light": "resources/light/snapshot-options.svg",
+          "dark": "resources/dark/snapshot-options.svg"
+        }
+      },
+      {
         "command": "sourceTools.diffTrackedFile",
         "title": "SourceTools: Diff Tracked File",
         "icon": {
@@ -62,16 +78,33 @@
       ],
       "editor/title": [
         {
-          "command": "sourceTools.diffTrackedFile",
-          "when": "editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && sourceTools.trackingBaseRef != '' && !isInDiffEditor && !resourceDiffEditorPreview",
+          "command": "sourceTools.snapshotTrackingOptions",
+          "when": "editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
+          "arguments": ["${activeEditor}"],
+          "group": "navigation@1"
+        },
+        {
+          "command": "sourceTools.diffFileSnapshot",
+          "when": "sourceTools.hasActiveSnapshot && editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
           "alt": "sourceTools.gitTrackingOptions",
           "arguments": ["${activeEditor}"],
-          "group": "navigation"
+          "group": "navigation@2"
+        },
+        {
+          "command": "sourceTools.diffTrackedFile",
+          "when": "!sourceTools.hasActiveSnapshot && editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
+          "alt": "sourceTools.gitTrackingOptions",
+          "arguments": ["${activeEditor}"],
+          "group": "navigation@3"
         }
       ],
       "commandPalette": [
         {
           "command": "sourceTools.toggleTreeColor",
+          "when": "false"
+        },
+        {
+          "command": "sourceTools.diffFileSnapshot",
           "when": "false"
         }
       ]

@@ -25,6 +25,7 @@ class VirtualGitDiff {
   private addedFileDecoration!: CustomFileDecorationProvider;
   private modifiedFileDecoration!: CustomFileDecorationProvider;
   private diffTimeout?: NodeJS.Timeout;
+  private snapshotManager?: SnapshotManager;
 
   // Create an output channel for logging
   private outputChannel: vscode.OutputChannel;
@@ -42,10 +43,17 @@ class VirtualGitDiff {
     // Let's log an initial message
     console.log('[SourceTools] Extension constructor called.');
     console.log(`[SourceTools] Loaded baseRef from storage: ${this.baseRef}`);
-   // Initialize the context variable for when clauses
-   vscode.commands.executeCommand('setContext', 'sourceTools.trackingBaseRef', this.baseRef);
-   console.log(`[SourceTools] Initialized context variable: sourceTools.trackingBaseRef = ${this.baseRef}`);
+    // Initialize the context variable for when clauses
+    vscode.commands.executeCommand('setContext', 'sourceTools.trackingBaseRef', this.baseRef);
+    console.log(`[SourceTools] Initialized context variable: sourceTools.trackingBaseRef = ${this.baseRef}`);
     this.initDecorations();
+
+    // Initialize snapshot manager when a workspace is available
+    if (vscode.workspace.workspaceFolders?.length) {
+      this.snapshotManager = new SnapshotManager(vscode.workspace.workspaceFolders[0].uri.fsPath);
+      console.log(`[SourceTools] Initialized snapshot manager for workspace: ${vscode.workspace.workspaceFolders[0].uri.fsPath}`);
+    }
+
   }
 
   private initDecorations() {
@@ -187,11 +195,19 @@ class VirtualGitDiff {
     this.context.subscriptions.push(
       vscode.commands.registerCommand('sourceTools.gitTrackingOptions', (...args) => {
         console.log('>>> sourceTools.gitTrackingOptions', args);
-        this.selectBaseRef()
+        this.selectBaseRef();
       }),
       vscode.commands.registerCommand('sourceTools.diffTrackedFile', (...args) => {
         console.log('>>> sourceTools.diffTrackedFile', args);
-        this.diffTrackedFile()
+        this.diffTrackedFile();
+      }),
+      vscode.commands.registerCommand('sourceTools.diffFileSnapshot', (...args) => {
+        console.log('>>> sourceTools.diffFileSnapshot', args);
+        this.diffTrackedFile(); // diffTrackedFile should show a diff agaisnt active snapshot if any, so no need for a separate function
+      }),
+      vscode.commands.registerCommand('sourceTools.snapshotTrackingOptions', (...args) => {
+        console.log('>>> sourceTools.snapshotTrackingOptions', ...args);
+        this.selectSnapshotTrackingOptions(args[0]);
       }),
       vscode.commands.registerCommand('sourceTools.openChangedFiles', (force) => this.openChangedFiles(force)),
       vscode.commands.registerCommand('sourceTools.openTrackedFiles', (force) => this.openTrackedFiles(force)),
@@ -220,9 +236,391 @@ class VirtualGitDiff {
 
     // Also schedule an initial file explorer update
     this.scheduleFileExplorerUpdate();
+
+    setTimeout(() => {
+      this.updateActiveEditorContext();
+    }, 1000);
+  }
+
+  /**
+   * Formats a timestamp as a relative time string (seconds ago, minutes ago, hours ago, etc.)
+   * @param timestamp The timestamp to format
+   * @returns A human-readable relative time string
+   */
+  private getRelativeTimeString(timestamp: number): string {
+    const now = Date.now();
+    const diff = now - timestamp;
+
+    // Less than a minute
+    if (diff < 60 * 1000) {
+      const seconds = Math.floor(diff / 1000);
+      return `${seconds} second${seconds !== 1 ? 's' : ''} ago`;
+    }
+
+    // Less than 2 hours
+    if (diff < 120 * 60 * 1000) {
+      const minutes = Math.floor(diff / (60 * 1000));
+      return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    }
+
+    // Less than 2 days
+    if (diff < 48 * 60 * 60 * 1000) {
+      const hours = Math.floor(diff / (60 * 60 * 1000));
+      return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+    }
+
+    // Less than a week
+    if (diff < 7 * 24 * 60 * 60 * 1000) {
+      const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+      return `${days} day${days !== 1 ? 's' : ''} ago`;
+    }
+
+    // For older timestamps, show the actual date
+    return new Date(timestamp).toLocaleString();
+  }
+
+  private async selectSnapshotTrackingOptions(serializedUri: any) {
+    console.log('[SourceTools] selectSnapshotTrackingOptions called.');
+    let documentUri: vscode.Uri | undefined;
+
+    // Use the external property if available (this contains the fully qualified URI)
+    if (serializedUri && typeof serializedUri === 'object' && 'external' in serializedUri) {
+      documentUri = vscode.Uri.parse(serializedUri.external);
+      console.log('[SourceTools] Using provided URI:', documentUri.toString());
+    } else {
+      // Fall back to the active editor if no URI was provided
+      const editor = vscode.window.activeTextEditor;
+      if (editor) {
+        documentUri = editor.document.uri;
+        console.log('[SourceTools] Falling back to active editor URI:', documentUri.toString());
+      } else {
+        vscode.window.showInformationMessage('No document available to manage snapshots.');
+        return;
+      }
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showInformationMessage('No active editor to manage snapshots.');
+      return;
+    }
+
+    const filePath = editor.document.uri.fsPath;
+    console.log(`[SourceTools] Managing snapshots for file: ${filePath}`);
+
+    // Get snapshots for this file
+    const snapshots = this.snapshotManager?.getSnapshots(filePath) || [];
+    const activeSnapshot = this.snapshotManager?.getActiveSnapshot(filePath);
+
+    // Create QuickPickItems for each snapshot
+    const snapshotItems: vscode.QuickPickItem[] = snapshots.map(snapshot => {
+      // Check if this is the active snapshot
+      const isActive = activeSnapshot && snapshot.id === activeSnapshot.id;
+      return {
+        label: isActive ? `$(triangle-right) ${this.getRelativeTimeString(snapshot.timestamp)}` : (activeSnapshot ? `$(blank) ${this.getRelativeTimeString(snapshot.timestamp)}` : `${this.getRelativeTimeString(snapshot.timestamp)}`),
+        description: snapshot.message || 'No description',
+        id: snapshot.id
+      };
+    });
+
+    // the separators are putting the lavbels over the items, instead of space betweeen!!!
+    const options: vscode.QuickPickItem[] = [
+      ...(activeSnapshot ? [
+        { label: '$(close)', description: 'Deactivate Snapshot' },
+      ] : []),
+      ... snapshotItems?.length ? [
+        { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
+        { label: '', description: 'Snapshots', kind: vscode.QuickPickItemKind.Default }
+      ] : [],
+      ...snapshotItems,
+      { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
+      { label: '', description: 'Snapshot Actions', kind: vscode.QuickPickItemKind.Default },
+      { label: 'Delete Active Snapshot', description: 'Clear the current snapshot' },
+      { label: 'Delete File Snapshots', description: 'Clear all file snapshots' },
+      { label: 'Restore From Snapshot', description: 'Restore file from snapshot state' },
+      { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
+      { label: 'Take Snapshot', description: 'Type a message to take a new snapshot' }
+    ];
+
+    const quickPick = vscode.window.createQuickPick();
+    quickPick.placeholder = 'Select or type a snapshot option or message';
+    quickPick.items = options;
+    // Set currently active snapshot as selected if one exists
+    if (activeSnapshot) {
+      const activeItem = snapshotItems.find(item => 'id' in item && item.id === activeSnapshot.id);
+      if (activeItem) {
+        quickPick.activeItems = [activeItem];
+      }
+    } else {
+      // Set "Take Snapshot" as the default option when no active snapshot exists
+      const takeSnapshotItem = options.find(item => item.label === 'Take Snapshot');
+      if (takeSnapshotItem) {
+        quickPick.activeItems = [takeSnapshotItem];
+      }
+    }
+    quickPick.title = 'Source Tools: Manage Snapshots';
+    quickPick.canSelectMany = false;
+    quickPick.ignoreFocusOut = false;
+
+    quickPick.onDidChangeValue(() => {
+      // Refresh the list when user types, but keep the custom value at top
+      const customItem = { label: quickPick.value, description: 'Take new snapshot' };
+      const filteredItems = options.filter(item =>
+        item.label.toLowerCase().includes(quickPick.value.toLowerCase())
+      );
+
+      // Only add custom item if it's not empty and not exactly matching an existing option
+      if (quickPick.value && !options.some(item => item.label === quickPick.value)) {
+        quickPick.items = [customItem, ...filteredItems];
+      } else {
+        quickPick.items = filteredItems;
+      }
+    });
+
+    quickPick.onDidAccept(() => {
+      console.log('onDidAccept', quickPick.value, quickPick.items, quickPick.selectedItems)
+      const selectedItem = quickPick.selectedItems[0];
+      if (selectedItem) {
+        if (selectedItem.label === 'Restore From Snapshot') {
+          this.restoreFromSnapshot(filePath);
+        } else if (selectedItem.label === 'Delete Active Snapshot') {
+          this.clearSnapshot(filePath);
+        } else if (selectedItem.label === 'Delete File Snapshots') {
+          this.clearSnapshot(filePath, true);
+        } else if (selectedItem.description === 'Deactivate Snapshot') {
+          this.deactivateSnapshot(filePath);
+        } else if (selectedItem.description === 'Take new snapshot' || selectedItem.label === 'Take Snapshot') {
+          // Only take snapshot if there's a message
+          if (quickPick.value.trim()) {
+            console.log('SNAPSHOT >>> ', quickPick.value)
+            this.takeNewSnapshot(filePath, quickPick.value);
+          } else {
+            // Prompt for a snapshot message
+            vscode.window.showInputBox({
+              prompt: 'Enter a message for the snapshot',
+              placeHolder: 'Snapshot message',
+              value: 'Snapshot'
+            }).then(message => {
+              if (message) {
+                this.takeNewSnapshot(filePath, message);
+              } else {
+                  vscode.window.showWarningMessage('Snapshot creation cancelled: No name provided.');
+              }
+            });
+          }
+        } else {
+          // A specific snapshot was selected - activate it
+          if ('id' in selectedItem && this.snapshotManager) {
+            this.snapshotManager.setActiveSnapshot(filePath, 'id' in selectedItem ? selectedItem.id?.toString() : undefined);
+            vscode.window.showInformationMessage(`Activated snapshot: ${selectedItem.description}`);
+            this.updateActiveEditorContext();
+            this.updateDecorations();
+          }
+        }
+      } else if (quickPick.value.trim()) {
+        console.log('SNAPSHOT >>> ', quickPick.value)
+        // No item selected but there's input text - treat as new snapshot
+        this.takeNewSnapshot(filePath, quickPick.value);
+      }
+      quickPick.hide();
+    });
+
+    quickPick.show();
+  }
+
+  private async restoreFromSnapshot(filePath: string) {
+    console.log(`[SourceTools] restoreFromSnapshot called for file: ${filePath}`);
+    if (!this.snapshotManager) {
+      vscode.window.showErrorMessage('Snapshot manager is not initialized');
+      return;
+    }
+
+    const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
+    if (!activeSnapshot) {
+      vscode.window.showInformationMessage('No active snapshot to restore from');
+      return;
+    }
+
+    try {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || editor.document.uri.fsPath !== filePath) {
+        vscode.window.showErrorMessage('Cannot restore snapshot: file not open in editor');
+        return;
+      }
+
+      // Confirm with user before restoring from snapshot
+      const confirmed = await vscode.window.showWarningMessage(
+        `This will replace the current file content with the snapshot from ${new Date(activeSnapshot.timestamp).toLocaleString()}. Continue?`,
+        { modal: true },
+        'Yes', 'No'
+      );
+
+      if (confirmed !== 'Yes') {
+        console.log(`[SourceTools] User cancelled restore from snapshot`);
+        return;
+      }
+
+      // Create a backup of the current content first
+      const currentContent = editor.document.getText();
+      this.snapshotManager.takeSnapshot(filePath, currentContent, "Backup Snapshot");
+
+      // Replace the editor content with the snapshot content
+      const edit = new vscode.WorkspaceEdit();
+      const fullRange = new vscode.Range(
+        new vscode.Position(0, 0),
+        new vscode.Position(editor.document.lineCount, 0)
+      );
+      edit.replace(editor.document.uri, fullRange, activeSnapshot.content);
+
+      await vscode.workspace.applyEdit(edit);
+      vscode.window.showInformationMessage(`Restored from snapshot: ${new Date(activeSnapshot.timestamp).toLocaleString()}`);
+      console.log(`[SourceTools] Restored file from snapshot: ${filePath}`);
+
+      // Update context after restoring from snapshot
+      this.updateActiveEditorContext(editor);
+    } catch (error) {
+      console.error(`[SourceTools] Error restoring from snapshot: ${error}`);
+      vscode.window.showErrorMessage(`Failed to restore from snapshot: ${error}`);
+    }
+  }
+
+  /**
+    * Updates the VS Code context based on whether the active editor has an active snapshot
+    * @param editor The active text editor or undefined
+    */
+  private updateActiveEditorContext(editor: vscode.TextEditor | undefined = undefined) {
+    if (!editor) {
+      editor = vscode.window.activeTextEditor;
+    }
+
+    // Check if editor is valid and not a debug configuration provider
+    if (editor &&
+        editor.document &&
+        editor.document.uri &&
+        editor.document.uri.scheme === 'file' &&
+        this.snapshotManager) {
+      const filePath = editor.document.uri.fsPath;
+      const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
+
+      // Set context variable for when clauses
+      vscode.commands.executeCommand(
+        'setContext',
+        'sourceTools.hasActiveSnapshot',
+        activeSnapshot !== undefined
+      );
+
+      console.log(`[SourceTools] Active editor has snapshot: ${activeSnapshot !== undefined}`);
+    } else {
+      // Clear context when no editor is active
+      vscode.commands.executeCommand('setContext', 'sourceTools.hasActiveSnapshot', false);
+    }
+  }
+
+  private async clearSnapshot(filePath: string, allForFile = false) {
+    if (!this.snapshotManager) {
+      vscode.window.showErrorMessage('Snapshot manager is not initialized');
+      return;
+    }
+
+    try {
+      if (allForFile) {
+        // Show a warning modal for confirmation before deleting all snapshots
+        const confirmed = await vscode.window.showWarningMessage(
+          `Are you sure you want to delete ALL snapshots for ${path.basename(filePath)}? This cannot be undone.`,
+          { modal: true },
+          'Yes, Delete All', 'Cancel'
+        );
+
+        if (confirmed !== 'Yes, Delete All') {
+          console.log(`[SourceTools] User cancelled deletion of all snapshots for ${filePath}`);
+          return;
+        }
+        this.snapshotManager.clearSnapshots(filePath);
+      } else {
+        const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
+        if (activeSnapshot) {
+          this.snapshotManager.deleteSnapshot(filePath, activeSnapshot.id);
+        } else {
+          vscode.window.showInformationMessage('No active snapshot to clear');
+        }
+      }
+      vscode.window.showInformationMessage(`Snapshots cleared for ${path.basename(filePath)}`);
+      console.log(`[SourceTools] Cleared snapshots for file: ${filePath}`);
+
+      // Update decorations to reflect changes
+      this.updateDecorations();
+
+      // Update context after clearing snapshots
+      this.updateActiveEditorContext();
+    } catch (error) {
+      console.error(`[SourceTools] Error clearing snapshots: ${error}`);
+      vscode.window.showErrorMessage(`Failed to clear snapshots: ${error}`);
+    }
+  }
+
+  private deactivateSnapshot(filePath: string) {
+    if (!this.snapshotManager) {
+      vscode.window.showErrorMessage('Snapshot manager is not initialized');
+      return;
+    }
+
+    try {
+      this.snapshotManager.setActiveSnapshot(filePath, undefined);
+      vscode.window.showInformationMessage(`Snapshot tracking deactivated for ${path.basename(filePath)}`);
+      console.log(`[SourceTools] Deactivated snapshot tracking for file: ${filePath}`);
+
+      // Update decorations to reflect changes
+      this.updateDecorations();
+
+      // Update context after deactivating snapshot
+      this.updateActiveEditorContext();
+    } catch (error) {
+      console.error(`[SourceTools] Error deactivating snapshot: ${error}`);
+      vscode.window.showErrorMessage(`Failed to deactivate snapshot: ${error}`);
+    }
+  }
+
+  private takeNewSnapshot(filePath: string, message: string) {
+    console.log(`[SourceTools] takeNewSnapshot called with filePath: ${filePath}, message: ${message}`);
+    if (!this.snapshotManager) {
+      vscode.window.showErrorMessage('Snapshot manager is not initialized');
+      return;
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.uri.fsPath !== filePath) {
+      vscode.window.showErrorMessage('Cannot take snapshot: file not open in editor');
+      return;
+    }
+
+    try {
+      // Get content from the current editor
+      const content = editor.document.getText();
+
+      // Use the correct method: takeSnapshot
+      const snapshotId = this.snapshotManager.takeSnapshot(filePath, content, message);
+
+      // Set it as the active snapshot
+      this.snapshotManager.setActiveSnapshot(filePath, snapshotId);
+
+      vscode.window.showInformationMessage(`Snapshot created for ${path.basename(filePath)}`);
+      console.log(`[SourceTools] Created new snapshot for file: ${filePath} with message: ${message}`);
+
+      // Update decorations to reflect changes
+      this.updateDecorations();
+
+      // Update context after taking new snapshot
+      this.updateActiveEditorContext(editor);
+    } catch (error) {
+      console.error(`[SourceTools] Error taking snapshot: ${error}`);
+      vscode.window.showErrorMessage(`Failed to take snapshot: ${error}`);
+    }
   }
 
   private handleActiveEditorChange(editor: vscode.TextEditor | undefined) {
+    // Check if editor has an active snapshot and set context
+    this.updateActiveEditorContext(editor);
+
     console.log('[SourceTools] Active editor changed.');
     if (editor) {
       console.log(`[SourceTools] New active file: ${editor.document.uri.fsPath}`);
@@ -563,7 +961,7 @@ class VirtualGitDiff {
     }
 
     // Make it accept custom input
-    quickPick.ignoreFocusOut = true;
+    quickPick.ignoreFocusOut = false;
 
     let input: string | undefined;
 
@@ -833,6 +1231,46 @@ class VirtualGitDiff {
     }
 
     const filePath = editor.document.uri.fsPath;
+
+    // Check if there's an active snapshot for this file first
+    if (this.snapshotManager) {
+      const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
+      if (activeSnapshot) {
+        console.log(`[SourceTools] Using active snapshot for diff: ${activeSnapshot.id}`);
+        // Create a title for the diff view
+        const title = `${path.basename(filePath)} (Snapshot: ${new Date(activeSnapshot.timestamp).toLocaleString()})`;
+
+        // Create a virtual document URI
+        const baseContent = activeSnapshot.content;
+        const virtualDocumentUri = vscode.Uri.parse(`sourcetools-diff:/${path.basename(filePath)}?${Date.now()}`);
+
+        // Register a content provider for the virtual document
+        const contentProvider = vscode.workspace.registerTextDocumentContentProvider('sourcetools-diff', {
+          provideTextDocumentContent: (uri: vscode.Uri) => {
+            return baseContent;
+          }
+        });
+
+        // Add the content provider to subscriptions for cleanup
+        this.context.subscriptions.push(contentProvider);
+
+        // Open diff view with current editor on the left
+        await vscode.commands.executeCommand(
+          'vscode.diff',
+          virtualDocumentUri,
+          editor.document.uri,
+          title
+        );
+
+        // Dispose the content provider after a delay to ensure the diff view has loaded
+        setTimeout(() => {
+          contentProvider.dispose();
+        }, 30000); // 30 seconds
+
+        return;
+      }
+    }
+
     const gitRoot = this.getGitRepoRoot(filePath);
 
     if (!gitRoot) {
@@ -1317,7 +1755,23 @@ class VirtualGitDiff {
       const currentContent = editor.document.getText();
 
       try {
-        const baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot, false);
+
+        // Check if there's an active snapshot for this file
+        let baseContentResult;
+        if (this.snapshotManager) {
+          console.log('>>>>> SNAP', relativePath, filePath)
+          const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
+          if (activeSnapshot) {
+            console.log(`[SourceTools] Using active snapshot for ${relativePath}: ${activeSnapshot.id}`);
+            baseContentResult = { status: 0, stdout: activeSnapshot.content, stderr: '' };
+          } else {
+            // No active snapshot, use Git content
+            baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot, false);
+          }
+        } else {
+          // No snapshot manager, use Git content
+          baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot, false);
+        }
 
         // If status is not 0, the file might be newly added and not exist in the base ref
         if (baseContentResult.status !== 0) {
@@ -1497,4 +1951,229 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
   // Optional cleanup
+}
+
+// File snapshot handling
+interface FileSnapshot {
+  id: string;          // Unique identifier for the snapshot
+  filePath: string;    // Path to the file relative to workspace
+  message: string;     // User-provided description
+  timestamp: number;   // When the snapshot was taken
+  content: string;     // The file content at snapshot time
+}
+
+interface SnapshotIndex {
+  [filePath: string]: {
+    snapshots: string[];  // Array of snapshot IDs for this file
+    activeSnapshot?: string; // Currently active snapshot ID
+  };
+}
+
+class SnapshotManager {
+  private snapshotDir: string;
+  private indexFile: string;
+  private index: SnapshotIndex = {};
+
+  constructor(private workspaceRoot: string) {
+    // Create .sourcetools directory if it doesn't exist
+    this.snapshotDir = path.join(workspaceRoot, '.vscode', 'snapshots');
+    this.indexFile = path.join(workspaceRoot, '.vscode', 'snapshot-index.json');
+
+    // Load existing index if available
+    this.loadIndex();
+  }
+
+  /**
+    * Ensure the necessary directories exist, but only if we have snapshots
+    * This prevents creating directories unless the feature is actually used
+    */
+  private ensureDirectoriesExist() {
+    // Only create directories if we have at least one snapshot
+    const hasSnapshots = Object.keys(this.index).length > 0;
+
+    if (hasSnapshots || this.isFileOperationInProgress()) {
+      if (!fs.existsSync(path.join(this.workspaceRoot, '.vscode'))) {
+        fs.mkdirSync(path.join(this.workspaceRoot, '.vscode'), { recursive: true });
+      }
+
+      if (!fs.existsSync(this.snapshotDir)) {
+        fs.mkdirSync(this.snapshotDir, { recursive: true });
+      }
+    }
+  }
+
+  /**
+    * Check if we're in the middle of a file operation
+    * This helps determine if we should create directories
+    */
+  private isFileOperationInProgress(): boolean {
+    // We can assume a file operation is in progress if this method is called
+    // during takeSnapshot, deleteSnapshot, etc.
+    return true;
+  }
+
+  private loadIndex() {
+    try {
+      if (fs.existsSync(this.indexFile)) {
+        this.index = JSON.parse(fs.readFileSync(this.indexFile, 'utf8'));
+        console.log(`[SourceTools] Loaded snapshot index from ${this.indexFile}`);
+      } else {
+        this.index = {};
+        console.log(`[SourceTools] No snapshot index found, creating new one`);
+      }
+    } catch (error) {
+      console.error(`[SourceTools] Error loading snapshot index: ${error}`);
+      this.index = {};
+    }
+  }
+
+  private saveIndex() {
+    try {
+      // Ensure directories exist before saving
+      this.ensureDirectoriesExist();
+
+      fs.writeFileSync(this.indexFile, JSON.stringify(this.index, null, 2), 'utf8');
+      console.log(`[SourceTools] Saved snapshot index to ${this.indexFile}`);
+    } catch (error) {
+      console.error(`[SourceTools] Error saving snapshot index: ${error}`);
+    }
+  }
+
+  /**
+    * Take a new snapshot of a file
+    */
+  public takeSnapshot(filePath: string, content: string, message: string): string {
+    // Ensure directories exist since we're about to create a file
+    this.ensureDirectoriesExist();
+
+    // Generate unique ID for this snapshot
+    const id = `${path.basename(filePath)}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+    // Create the snapshot object
+    const snapshot: FileSnapshot = {
+      id,
+      filePath: filePath,
+      message,
+      timestamp: Date.now(),
+      content
+    };
+
+    // Save the snapshot to a file
+    const snapshotPath = path.join(this.snapshotDir, `${id}.json`);
+    fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), 'utf8');
+
+    // Update the index
+    if (!this.index[filePath]) {
+      this.index[filePath] = { snapshots: [] };
+    }
+
+    this.index[filePath].snapshots.push(id);
+    this.saveIndex();
+
+    return id;
+  }
+
+  /**
+    * Get all snapshots for a file
+    */
+  public getSnapshots(filePath: string): FileSnapshot[] {
+    if (!this.index[filePath] || !this.index[filePath].snapshots.length) {
+      return [];
+    }
+
+    const snapshots: FileSnapshot[] = [];
+    for (const id of this.index[filePath].snapshots) {
+      try {
+        const snapshotPath = path.join(this.snapshotDir, `${id}.json`);
+        if (fs.existsSync(snapshotPath)) {
+          const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+          snapshots.push(snapshot);
+        }
+      } catch (error) {
+        console.error(`[SourceTools] Error loading snapshot ${id}: ${error}`);
+      }
+    }
+
+    // Sort by timestamp, newest first
+    return snapshots.sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  /**
+    * Set the active snapshot for a file
+    */
+  public setActiveSnapshot(filePath: string, snapshotId: string | undefined) {
+    if (!this.index[filePath]) {
+      this.index[filePath] = { snapshots: [] };
+    }
+
+    this.index[filePath].activeSnapshot = snapshotId;
+    this.saveIndex();
+  }
+
+  /**
+    * Get the active snapshot for a file
+    */
+  public getActiveSnapshot(filePath: string): FileSnapshot | undefined {
+    if (!this.index[filePath] || !this.index[filePath].activeSnapshot) {
+      return undefined;
+    }
+
+    const id = this.index[filePath].activeSnapshot;
+    try {
+      const snapshotPath = path.join(this.snapshotDir, `${id}.json`);
+      if (fs.existsSync(snapshotPath)) {
+        return JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+      }
+    } catch (error) {
+      console.error(`[SourceTools] Error loading active snapshot ${id}: ${error}`);
+    }
+
+    return undefined;
+  }
+
+  /**
+    * Delete a snapshot
+    */
+  public deleteSnapshot(filePath: string, snapshotId: string) {
+    if (!this.index[filePath]) {
+      return;
+    }
+
+    // Remove from index
+    this.index[filePath].snapshots = this.index[filePath].snapshots.filter(id => id !== snapshotId);
+
+    // If this was the active snapshot, clear it
+    if (this.index[filePath].activeSnapshot === snapshotId) {
+      this.index[filePath].activeSnapshot = undefined;
+    }
+
+    // Remove the snapshot file
+    const snapshotPath = path.join(this.snapshotDir, `${snapshotId}.json`);
+    if (fs.existsSync(snapshotPath)) {
+      fs.unlinkSync(snapshotPath);
+    }
+
+    this.saveIndex();
+  }
+
+  /**
+    * Clear all snapshots for a file
+    */
+  public clearSnapshots(filePath: string) {
+    if (!this.index[filePath]) {
+      return;
+    }
+
+    // Delete all snapshot files
+    for (const id of this.index[filePath].snapshots) {
+      const snapshotPath = path.join(this.snapshotDir, `${id}.json`);
+      if (fs.existsSync(snapshotPath)) {
+        fs.unlinkSync(snapshotPath);
+      }
+    }
+
+    // Remove from index
+    delete this.index[filePath];
+    this.saveIndex();
+  }
 }
