@@ -1216,9 +1216,8 @@ class VirtualGitDiff {
           // if we've confirmed there's no addition following
           if (!nextPart || !nextPart.added) {
             // This is a pure removal with no corresponding addition
-            for (let i = 0; i < lineCount; i++) {
-              removed.push({ range: new vscode.Range(lineNumber + i, 0, lineNumber + i, 0) });
-            }
+            // Only add one decoration at the start of the removed block
+            removed.push({ range: new vscode.Range(lineNumber, 0, lineNumber, 0) });
             // Reset counters since we've handled these removals
             removedLineCount = 0;
             removedAt = -1;
@@ -1231,9 +1230,8 @@ class VirtualGitDiff {
 
         // If we have pending removals and no additions followed, they are true removals
         if (removedLineCount > 0) {
-          for (let i = 0; i < removedLineCount; i++) {
-            removed.push({ range: new vscode.Range(removedAt + i, 0, removedAt + i, 0) });
-          }
+          // Only add one decoration at the start of the removed block
+          removed.push({ range: new vscode.Range(removedAt, 0, removedAt, 0) });
           removedLineCount = 0;
           removedAt = -1;
         }
@@ -1250,9 +1248,8 @@ class VirtualGitDiff {
 
     // Handle any remaining removed lines at the end of the diff
     if (removedLineCount > 0) {
-      for (let i = 0; i < removedLineCount; i++) {
-        removed.push({ range: new vscode.Range(removedAt + i, 0, removedAt + i, 0) });
-      }
+      // Only add one decoration at the start of the removed block
+      removed.push({ range: new vscode.Range(removedAt, 0, removedAt, 0) });
     }
 
     // Finalize any remaining added range
