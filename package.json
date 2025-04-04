@@ -1,8 +1,8 @@
 {
   "name": "source-tools",
   "displayName": "Source Tools",
-  "description": "Track code changes against any git reference (not just the current branch) with visual indicators that work alongside built-in git features",
-  "version": "0.2.0",
+  "description": "Track code changes against any git reference or snapshots (not just the current branch) with visual indicators that work alongside built-in git features",
+  "version": "0.2.1",
   "publisher": "bitbased",
   "engines": {
     "vscode": "^1.50.0"

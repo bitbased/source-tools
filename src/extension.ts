@@ -1225,11 +1225,6 @@ class VirtualGitDiff {
       return;
     }
 
-    if (!this.baseRef) {
-      vscode.window.showInformationMessage('No base ref set. Please set a base ref first.');
-      return;
-    }
-
     const filePath = editor.document.uri.fsPath;
 
     // Check if there's an active snapshot for this file first
@@ -1269,6 +1264,11 @@ class VirtualGitDiff {
 
         return;
       }
+    }
+
+    if (!this.baseRef) {
+      vscode.window.showInformationMessage('No base ref set. Please set a base ref first.');
+      return;
     }
 
     const gitRoot = this.getGitRepoRoot(filePath);
@@ -1730,7 +1730,35 @@ class VirtualGitDiff {
   }
 
   private async computeDiffForFileAsync(filePath: string): Promise<{ added: DiffRange[]; removed: vscode.DecorationOptions[]; changed: vscode.DecorationOptions[]; created: DiffRange[] }> {
-    console.log(`[SourceTools] computeDiffForFileAsync called for: ${filePath}`);
+    // First check if there's an active snapshot for this file
+    if (this.snapshotManager) {
+      const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
+      if (activeSnapshot) {
+        console.log(`[SourceTools] Found active snapshot for file: ${filePath}`);
+
+        const editor = vscode.window.visibleTextEditors.find(e => e.document.uri.fsPath === filePath);
+        if (editor) {
+          const currentContent = editor.document.getText();
+          const baseContent = activeSnapshot.content;
+
+          // Use in-memory diff to compare snapshot with current content
+          const diffs = Diff.diffLines(
+            baseContent,
+            currentContent,
+            {
+              ignoreWhitespace: false,
+              newlineIsToken: false,
+              ignoreNewlineAtEof: true,
+              stripTrailingCr: true,
+              ignoreCase: false
+            }
+          );
+
+          // Process the diffs to get the line ranges
+          return this.processDiffResult(diffs);
+        }
+      }
+    }
 
     const gitRoot = this.getGitRepoRoot(filePath);
     if (!gitRoot) {
@@ -1757,21 +1785,7 @@ class VirtualGitDiff {
       try {
 
         // Check if there's an active snapshot for this file
-        let baseContentResult;
-        if (this.snapshotManager) {
-          console.log('>>>>> SNAP', relativePath, filePath)
-          const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
-          if (activeSnapshot) {
-            console.log(`[SourceTools] Using active snapshot for ${relativePath}: ${activeSnapshot.id}`);
-            baseContentResult = { status: 0, stdout: activeSnapshot.content, stderr: '' };
-          } else {
-            // No active snapshot, use Git content
-            baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot, false);
-          }
-        } else {
-          // No snapshot manager, use Git content
-          baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot, false);
-        }
+        let baseContentResult = await this.runGitCommand(['show', `${resolvedRef}:${relativePath}`], gitRoot, false);
 
         // If status is not 0, the file might be newly added and not exist in the base ref
         if (baseContentResult.status !== 0) {
