@@ -32,6 +32,8 @@ The Snapshot feature lets you take a point-in-time capture of a file:
 - **Session Persistence** - Snapshots persist across editor sessions
 - **Independent of Git** - Works even for unsaved changes or files outside of version control
 
+![Feature Screenshot](resources/screenshot-snapshots.png)
+
 ### 📑 Quick File Access
 
 - **Open Tracked Files** - Open all files that have been modified since your tracking base
