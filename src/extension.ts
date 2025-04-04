@@ -1056,12 +1056,6 @@ class VirtualGitDiff {
     console.log('[SourceTools] updateDecorations called.');
     console.log(`[SourceTools] Current baseRef: ${this.baseRef}`);
 
-    if (!this.baseRef) {
-      console.log('[SourceTools] baseRef is empty, clearing decorations.');
-      this.clearDecorations();
-      return;
-    }
-
     for (const editor of vscode.window.visibleTextEditors) {
       // Skip non-file editors (output, terminal, etc.)
       if (editor.document.uri.scheme !== 'file') {
@@ -1069,9 +1063,21 @@ class VirtualGitDiff {
         continue;
       }
       const file = editor.document.uri.fsPath;
+      console.log(`[SourceTools] Checking for active snapshot for file: ${file}`);
+      if (this.snapshotManager && this.snapshotManager.getActiveSnapshot(file)) {
+        console.log('[SourceTools] Active snapshot found, skipping baseRef check.');
+        const diffs = await this.computeDiffForFileAsync(file);
+        console.log(`[SourceTools] Computed diffs for active snapshot.`);
+        this.applyDecorations(editor, diffs);
+        continue;
+      }
+      if (!this.baseRef) {
+        console.log('[SourceTools] baseRef is empty, clearing decorations.');
+        this.clearDecorations();
+        return;
+      }
       console.log(`[SourceTools] Computing diff for file: ${file}`);
       const diffs = await this.computeDiffForFileAsync(file);
-      // console.log(`[SourceTools] Computed diffs: ${JSON.stringify(diffs, null, 2)}`);
       console.log(`[SourceTools] Computed diffs.`);
       this.applyDecorations(editor, diffs);
     }

@@ -1,6 +1,6 @@
 # Source Tools for VS Code
 
-<!-- [![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools)
+<!-- [![Version](https://img.shields.io/badge/version-0.2.2-blue.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools)
 [![Installs](https://img.shields.io/badge/installs-beta-orange.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools)
 [![Rating](https://img.shields.io/badge/rating-beta-yellow.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools&ssr=false#review-details) -->
 
