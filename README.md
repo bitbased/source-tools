@@ -4,7 +4,7 @@
 [![Installs](https://img.shields.io/badge/installs-beta-orange.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools)
 [![Rating](https://img.shields.io/badge/rating-beta-yellow.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools&ssr=false#review-details) -->
 
-[![Current Release](https://img.shields.io/github/v/release/bitbased/source-tools?include_prereleases&label=Release)](https://github.com/bitbased/source-tools-for-vscode/releases/latest)
+[![Current Release](https://img.shields.io/github/v/release/bitbased/source-tools?include_prereleases&label=Release)](https://github.com/bitbased/source-tools/releases/latest)
 
 > **Note:** This extension is currently in early development. It may not perform efficiently with large repositories or large files due to the nature of its diff processing.
 
