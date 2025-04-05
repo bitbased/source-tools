@@ -1076,6 +1076,7 @@ class VirtualGitDiff {
         this.clearDecorations();
         return;
       }
+
       console.log(`[SourceTools] Computing diff for file: ${file}`);
       const diffs = await this.computeDiffForFileAsync(file);
       console.log(`[SourceTools] Computed diffs.`);
@@ -1273,15 +1274,30 @@ class VirtualGitDiff {
     }
 
     if (!this.baseRef) {
-      vscode.window.showInformationMessage('No base ref set. Please set a base ref first.');
-      return;
+      // Try to use standard Git commands if our custom functionality isn't available
+      try {
+        // Execute the built-in git.openChange command instead
+        await vscode.commands.executeCommand('git.openChange');
+        return;
+      } catch (error) {
+        console.error(`[SourceTools] Error using git.openChange: ${error}`);
+        vscode.window.showInformationMessage('No base ref set. Please set a base ref first.');
+        return;
+      }
     }
 
     const gitRoot = this.getGitRepoRoot(filePath);
 
     if (!gitRoot) {
-      vscode.window.showInformationMessage('File is not in a Git repository.');
-      return;
+      try {
+        // Try built-in Git command as fallback
+        await vscode.commands.executeCommand('git.openChange');
+        return;
+      } catch (error) {
+        console.error(`[SourceTools] Error using git.openChange: ${error}`);
+        vscode.window.showInformationMessage('File is not in a Git repository.');
+        return;
+      }
     }
 
     try {
@@ -1291,7 +1307,14 @@ class VirtualGitDiff {
       // Dynamically resolve base ref for this file
       const resolvedRef = await this.resolveRefAsync(this.baseRef, gitRoot);
       if (!resolvedRef) {
-        vscode.window.showErrorMessage('Could not resolve base reference.');
+        // Try built-in Git command as fallback
+        try {
+          await vscode.commands.executeCommand('git.openChange');
+          return;
+        } catch (error) {
+          console.error(`[SourceTools] Error using git.openChange: ${error}`);
+          vscode.window.showErrorMessage('Could not resolve base reference.');
+        }
         return;
       }
 
@@ -1300,7 +1323,14 @@ class VirtualGitDiff {
 
       // If the file doesn't exist in the base ref
       if (baseContentResult.status !== 0) {
-        vscode.window.showInformationMessage('File does not exist in the base reference.');
+        // Try built-in Git command as fallback
+        try {
+          await vscode.commands.executeCommand('git.openChange');
+          return;
+        } catch (error) {
+          console.error(`[SourceTools] Error using git.openChange: ${error}`);
+          vscode.window.showInformationMessage('File does not exist in the base reference.');
+        }
         return;
       }
 
@@ -1336,7 +1366,14 @@ class VirtualGitDiff {
 
     } catch (error) {
       console.error(`[SourceTools] Error creating diff view: ${error}`);
-      vscode.window.showErrorMessage(`Error creating diff view: ${error}`);
+
+      // Try built-in Git command as final fallback
+      try {
+        await vscode.commands.executeCommand('git.openChange');
+      } catch (secondError) {
+        console.error(`[SourceTools] Error using git.openChange fallback: ${secondError}`);
+        vscode.window.showErrorMessage(`Error creating diff view: ${error}`);
+      }
     }
   }
 
