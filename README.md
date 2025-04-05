@@ -1,6 +1,6 @@
 # Source Tracker for VS Code
 
-[![Version](https://img.shields.io/badge/version-0.2.5-blue.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tracker)
+[![Version](https://img.shields.io/badge/version-0.2.7-blue.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tracker)
 [![Installs](https://img.shields.io/badge/installs-beta-orange.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tracker)
 [![Rating](https://img.shields.io/badge/rating-beta-yellow.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tracker&ssr=false#review-details)
 

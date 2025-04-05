@@ -1,13 +1,14 @@
 {
-  "name": "source-tracker",
+  "name": "bitbased-source-tracker",
   "displayName": "Source Tracker",
   "description": "Track code changes against any git reference or snapshots (not just the current branch) with visual indicators that work alongside built-in git features",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "publisher": "bitbased",
   "author": "Brant Wedel (https://bitbased.net)",
   "engines": {
     "vscode": "^1.50.0"
   },
+  "icon": "resources/icon.png",
   "categories": [
     "SCM Providers",
     "Other"
@@ -161,7 +162,7 @@
     "compile": "tsc -p . --skipLibCheck",
     "watch": "tsc -w -p .",
     "package": "npm run compile-assets && npm run compile && vsce package --allow-missing-repository",
-    "package-install": "npm run package && code --force --install-extension source-tracker-$(node -e \"console.log(require('./package.json').version)\").vsix"
+    "package-install": "npm run package && code --force --install-extension bitbased-source-tracker-$(node -e \"console.log(require('./package.json').version)\").vsix"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
