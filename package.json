@@ -2,8 +2,10 @@
   "name": "source-tools",
   "displayName": "Source Tools",
   "description": "Track code changes against any git reference or snapshots (not just the current branch) with visual indicators that work alongside built-in git features",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "publisher": "bitbased",
+  "author": "Brant Wedel (https://bitbased.net)",
+  "type": "module",
   "engines": {
     "vscode": "^1.50.0"
   },
@@ -11,22 +13,20 @@
     "SCM Providers",
     "Other"
   ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
+  "license": "MIT",
   "repository": {
     "url": "https://github.com/bitbased/source-tools"
   },
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
       {
         "command": "sourceTools.gitTrackingOptions",
         "title": "Source Tools: Git Tracking",
-        "icon": {
-          "light": "resources/light/tracking-base-alt.svg",
-          "dark": "resources/dark/tracking-base-alt.svg"
-        }
+        "icon": "$(sti-tracking-base-alt)"
       },
       {
         "command": "sourceTools.openTrackedFiles",
@@ -41,26 +41,17 @@
       {
         "command": "sourceTools.diffFileSnapshot",
         "title": "SourceTools: Diff File Snapshot",
-        "icon": {
-          "light": "resources/light/snapshot-compare.svg",
-          "dark": "resources/dark/snapshot-compare.svg"
-        }
+        "icon": "$(sti-snapshot-compare)"
       },
       {
         "command": "sourceTools.snapshotTrackingOptions",
         "title": "SourceTools: Snapshot Tracking",
-        "icon": {
-          "light": "resources/light/snapshot-options-alt.svg",
-          "dark": "resources/dark/snapshot-options-alt.svg"
-        }
+        "icon": "$(sti-snapshot-options-alt)"
       },
       {
         "command": "sourceTools.diffTrackedFile",
         "title": "SourceTools: Diff Tracked File",
-        "icon": {
-          "light": "resources/light/tracking-compare.svg",
-          "dark": "resources/dark/tracking-compare.svg"
-        }
+        "icon": "$(sti-tracking-compare)"
       },
       {
         "command": "sourceTools.toggleTreeColor",
@@ -81,19 +72,25 @@
           "command": "sourceTools.snapshotTrackingOptions",
           "when": "editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
           "alt": "sourceTools.gitTrackingOptions",
-          "arguments": ["${activeEditor}"],
+          "arguments": [
+            "${activeEditor}"
+          ],
           "group": "navigation@1"
         },
         {
           "command": "sourceTools.diffFileSnapshot",
           "when": "sourceTools.hasActiveSnapshot && editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
-          "arguments": ["${activeEditor}"],
+          "arguments": [
+            "${activeEditor}"
+          ],
           "group": "navigation@2"
         },
         {
           "command": "sourceTools.diffTrackedFile",
           "when": "!sourceTools.hasActiveSnapshot && editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
-          "arguments": ["${activeEditor}"],
+          "arguments": [
+            "${activeEditor}"
+          ],
           "group": "navigation@3"
         }
       ],
@@ -107,16 +104,71 @@
           "when": "false"
         }
       ]
+    },
+    "icons": {
+      "sti-tracking-options": {
+        "description": "Source Tools tracking options icon",
+        "default": {
+          "fontPath": "./resources/source-tools-icons.woff",
+          "fontCharacter": "\\uf101"
+        }
+      },
+      "sti-tracking-compare": {
+        "description": "Source Tools tracking compare icon",
+        "default": {
+          "fontPath": "./resources/source-tools-icons.woff",
+          "fontCharacter": "\\uf102"
+        }
+      },
+      "sti-tracking-base": {
+        "description": "Source Tools tracking base icon",
+        "default": {
+          "fontPath": "./resources/source-tools-icons.woff",
+          "fontCharacter": "\\uf103"
+        }
+      },
+      "sti-tracking-base-alt": {
+        "description": "Source Tools tracking base alt icon",
+        "default": {
+          "fontPath": "./resources/source-tools-icons.woff",
+          "fontCharacter": "\\uf104"
+        }
+      },
+      "sti-snapshot-options": {
+        "description": "Source Tools snapshot options icon",
+        "default": {
+          "fontPath": "./resources/source-tools-icons.woff",
+          "fontCharacter": "\\uf105"
+        }
+      },
+      "sti-snapshot-options-alt": {
+        "description": "Source Tools snapshot options alt icon",
+        "default": {
+          "fontPath": "./resources/source-tools-icons.woff",
+          "fontCharacter": "\\uf106"
+        }
+      },
+      "sti-snapshot-compare": {
+        "description": "Source Tools snapshot compare icon",
+        "default": {
+          "fontPath": "./resources/source-tools-icons.woff",
+          "fontCharacter": "\\uf107"
+        }
+      }
     }
   },
   "scripts": {
+    "compile-assets": "node scripts/compile-assets-icons.js",
     "compile": "tsc -p . --skipLibCheck",
     "watch": "tsc -w -p .",
-    "package": "npm run compile && vsce package --allow-missing-repository"
+    "install": "npm run compile && vsce package --allow-missing-repository",
+    "package": "npm run compile-assets && npm run compile && vsce package --allow-missing-repository",
+    "package-install": "npm run package && code --force --install-extension source-tools-$(node -e \"console.log(require('./package.json').version)\").vsix"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.50.0",
+    "fantasticon": "^3.0.0",
     "typescript": "^4.0.0"
   },
   "dependencies": {

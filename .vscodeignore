@@ -23,6 +23,11 @@ jest.config.js
 **/*.map
 **/*.ts
 
+# Node modules
+node_modules/**
+!node_modules/diff/**
+!node_modules/@types/diff/**
+
 # Documentation and examples
 images/**
 docs/**
