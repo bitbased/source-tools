@@ -1,11 +1,10 @@
 {
-  "name": "source-tools",
-  "displayName": "Source Tools",
+  "name": "source-tracker",
+  "displayName": "Source Tracker",
   "description": "Track code changes against any git reference or snapshots (not just the current branch) with visual indicators that work alongside built-in git features",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "publisher": "bitbased",
   "author": "Brant Wedel (https://bitbased.net)",
-  "type": "module",
   "engines": {
     "vscode": "^1.50.0"
   },
@@ -15,79 +14,130 @@
   ],
   "license": "MIT",
   "repository": {
-    "url": "https://github.com/bitbased/source-tools"
+    "url": "https://github.com/bitbased/source-tracker"
   },
   "main": "./out/extension.js",
   "activationEvents": [
     "onStartupFinished"
   ],
   "contributes": {
+    "icons": {
+      "sti-tracking-options": {
+        "description": "Source Tracker tracking options icon",
+        "default": {
+          "fontPath": "./resources/source-tracker-icons.woff",
+          "fontCharacter": "\uf101"
+        }
+      },
+      "sti-tracking-compare": {
+        "description": "Source Tracker tracking compare icon",
+        "default": {
+          "fontPath": "./resources/source-tracker-icons.woff",
+          "fontCharacter": "\uf102"
+        }
+      },
+      "sti-tracking-base": {
+        "description": "Source Tracker tracking base icon",
+        "default": {
+          "fontPath": "./resources/source-tracker-icons.woff",
+          "fontCharacter": "\uf103"
+        }
+      },
+      "sti-tracking-base-alt": {
+        "description": "Source Tracker tracking base alt icon",
+        "default": {
+          "fontPath": "./resources/source-tracker-icons.woff",
+          "fontCharacter": "\uf104"
+        }
+      },
+      "sti-snapshot-options": {
+        "description": "Source Tracker snapshot options icon",
+        "default": {
+          "fontPath": "./resources/source-tracker-icons.woff",
+          "fontCharacter": "\uf105"
+        }
+      },
+      "sti-snapshot-options-alt": {
+        "description": "Source Tracker snapshot options alt icon",
+        "default": {
+          "fontPath": "./resources/source-tracker-icons.woff",
+          "fontCharacter": "\uf106"
+        }
+      },
+      "sti-snapshot-compare": {
+        "description": "Source Tracker snapshot compare icon",
+        "default": {
+          "fontPath": "./resources/source-tracker-icons.woff",
+          "fontCharacter": "\uf107"
+        }
+      }
+    },
     "commands": [
       {
-        "command": "sourceTools.gitTrackingOptions",
-        "title": "Source Tools: Git Tracking",
+        "command": "sourceTracker.gitTrackingOptions",
+        "title": "SourceTracker: Git Tracking",
         "icon": "$(sti-tracking-base-alt)"
       },
       {
-        "command": "sourceTools.openTrackedFiles",
-        "title": "SourceTools: Open Tracked Files",
+        "command": "sourceTracker.openTrackedFiles",
+        "title": "SourceTracker: Open Tracked Files",
         "icon": "$(go-to-editing-session)"
       },
       {
-        "command": "sourceTools.openChangedFiles",
-        "title": "SourceTools: Open Changed Files",
+        "command": "sourceTracker.openChangedFiles",
+        "title": "SourceTracker: Open Changed Files",
         "icon": "$(go-to-editing-session)"
       },
       {
-        "command": "sourceTools.diffFileSnapshot",
-        "title": "SourceTools: Diff File Snapshot",
+        "command": "sourceTracker.diffFileSnapshot",
+        "title": "SourceTracker: Diff File Snapshot",
         "icon": "$(sti-snapshot-compare)"
       },
       {
-        "command": "sourceTools.snapshotTrackingOptions",
-        "title": "SourceTools: Snapshot Tracking",
+        "command": "sourceTracker.snapshotTrackingOptions",
+        "title": "SourceTracker: Snapshot Tracking",
         "icon": "$(sti-snapshot-options-alt)"
       },
       {
-        "command": "sourceTools.diffTrackedFile",
-        "title": "SourceTools: Diff Tracked File",
+        "command": "sourceTracker.diffTrackedFile",
+        "title": "SourceTracker: Diff Tracked File",
         "icon": "$(sti-tracking-compare)"
       },
       {
-        "command": "sourceTools.toggleTreeColor",
-        "title": "SourceTools: Toggle File Color",
+        "command": "sourceTracker.toggleTreeColor",
+        "title": "SourceTracker: Toggle File Color",
         "icon": "$(symbol-color)"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "sourceTools.gitTrackingOptions",
+          "command": "sourceTracker.gitTrackingOptions",
           "when": "view == workbench.explorer.fileView",
           "group": "navigation"
         }
       ],
       "editor/title": [
         {
-          "command": "sourceTools.snapshotTrackingOptions",
-          "when": "editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
-          "alt": "sourceTools.gitTrackingOptions",
+          "command": "sourceTracker.snapshotTrackingOptions",
+          "when": "editorIsOpen && resourceScheme != 'sourcetracker-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
+          "alt": "sourceTracker.gitTrackingOptions",
           "arguments": [
             "${activeEditor}"
           ],
           "group": "navigation@1"
         },
         {
-          "command": "sourceTools.diffFileSnapshot",
-          "when": "sourceTools.hasActiveSnapshot && editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
+          "command": "sourceTracker.diffFileSnapshot",
+          "when": "sourceTracker.hasActiveSnapshot && editorIsOpen && resourceScheme != 'sourcetracker-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
           "arguments": [
             "${activeEditor}"
           ],
           "group": "navigation@2"
         },
         {
-          "command": "sourceTools.diffTrackedFile",
-          "when": "!sourceTools.hasActiveSnapshot && editorIsOpen && resourceScheme != 'sourcetools-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
+          "command": "sourceTracker.diffTrackedFile",
+          "when": "!sourceTracker.hasActiveSnapshot && editorIsOpen && resourceScheme != 'sourcetracker-diff' && resourceScheme != 'git' && resourceScheme != 'git-index' && !resourcePreview && !isInDiffEditor && !resourceDiffEditorPreview",
           "arguments": [
             "${activeEditor}"
           ],
@@ -96,74 +146,22 @@
       ],
       "commandPalette": [
         {
-          "command": "sourceTools.toggleTreeColor",
+          "command": "sourceTracker.toggleTreeColor",
           "when": "false"
         },
         {
-          "command": "sourceTools.diffFileSnapshot",
+          "command": "sourceTracker.diffFileSnapshot",
           "when": "false"
         }
       ]
-    },
-    "icons": {
-      "sti-tracking-options": {
-        "description": "Source Tools tracking options icon",
-        "default": {
-          "fontPath": "./resources/source-tools-icons.woff",
-          "fontCharacter": "\\uf101"
-        }
-      },
-      "sti-tracking-compare": {
-        "description": "Source Tools tracking compare icon",
-        "default": {
-          "fontPath": "./resources/source-tools-icons.woff",
-          "fontCharacter": "\\uf102"
-        }
-      },
-      "sti-tracking-base": {
-        "description": "Source Tools tracking base icon",
-        "default": {
-          "fontPath": "./resources/source-tools-icons.woff",
-          "fontCharacter": "\\uf103"
-        }
-      },
-      "sti-tracking-base-alt": {
-        "description": "Source Tools tracking base alt icon",
-        "default": {
-          "fontPath": "./resources/source-tools-icons.woff",
-          "fontCharacter": "\\uf104"
-        }
-      },
-      "sti-snapshot-options": {
-        "description": "Source Tools snapshot options icon",
-        "default": {
-          "fontPath": "./resources/source-tools-icons.woff",
-          "fontCharacter": "\\uf105"
-        }
-      },
-      "sti-snapshot-options-alt": {
-        "description": "Source Tools snapshot options alt icon",
-        "default": {
-          "fontPath": "./resources/source-tools-icons.woff",
-          "fontCharacter": "\\uf106"
-        }
-      },
-      "sti-snapshot-compare": {
-        "description": "Source Tools snapshot compare icon",
-        "default": {
-          "fontPath": "./resources/source-tools-icons.woff",
-          "fontCharacter": "\\uf107"
-        }
-      }
     }
   },
   "scripts": {
-    "compile-assets": "node scripts/compile-assets-icons.js",
+    "compile-assets": "node scripts/compile-assets-icons.mjs",
     "compile": "tsc -p . --skipLibCheck",
     "watch": "tsc -w -p .",
-    "install": "npm run compile && vsce package --allow-missing-repository",
     "package": "npm run compile-assets && npm run compile && vsce package --allow-missing-repository",
-    "package-install": "npm run package && code --force --install-extension source-tools-$(node -e \"console.log(require('./package.json').version)\").vsix"
+    "package-install": "npm run package && code --force --install-extension source-tracker-$(node -e \"console.log(require('./package.json').version)\").vsix"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",

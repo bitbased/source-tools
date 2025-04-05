@@ -1,25 +1,25 @@
-# Source Tools for VS Code
+# Source Tracker for VS Code
 
-[![Version](https://img.shields.io/badge/version-0.2.4-blue.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools)
-[![Installs](https://img.shields.io/badge/installs-beta-orange.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools)
-[![Rating](https://img.shields.io/badge/rating-beta-yellow.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tools&ssr=false#review-details)
+[![Version](https://img.shields.io/badge/version-0.2.5-blue.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tracker)
+[![Installs](https://img.shields.io/badge/installs-beta-orange.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tracker)
+[![Rating](https://img.shields.io/badge/rating-beta-yellow.svg)](https://marketplace.visualstudio.com/items?itemName=bitbased.source-tracker&ssr=false#review-details)
 
-[![Current Release](https://img.shields.io/github/v/release/bitbased/source-tools?include_prereleases&label=Release)](https://github.com/bitbased/source-tools/releases/latest)
+[![Current Release](https://img.shields.io/github/v/release/bitbased/source-tracker?include_prereleases&label=Release)](https://github.com/bitbased/source-tracker/releases/latest)
 
 > **Note:** This extension is currently in early development. It may not perform efficiently with large repositories or large files due to the nature of its diff processing.
 
-Source Tools enhances your git workflow by providing visual indicators of changes in your code, helping you track modifications since a specific git reference point.
+Source Tracker enhances your git workflow by providing visual indicators of changes in your code, helping you track modifications since a specific git reference point.
 
 ## Features
 
 ### 🔄 Git Change Tracking
 
-Source Tools allows you to visually track code changes against **any** git reference (branch, commit, tag) - providing more flexibility than VS Code's built-in git functionality:
+Source Tracker allows you to visually track code changes against **any** git reference (branch, commit, tag) - providing more flexibility than VS Code's built-in git functionality:
 
 - **Line-level indicators** show added, modified, and removed lines
 - **File explorer badges** show new and modified files
 - **Flexible base ref selection** - track against any branch, commit, or automatic detection
-- **Compatible with other git tools** - uses the leftmost gutter, allowing you to see Source Tools and GitHub/GitLens indicators simultaneously
+- **Compatible with other git tools** - uses the leftmost gutter, allowing you to see Source Tracker and GitHub/GitLens indicators simultaneously
 
 ![Feature Screenshot](resources/screenshot.png)
 
@@ -49,7 +49,7 @@ The Snapshot feature lets you take a point-in-time capture of a file:
 
 ### Setting a Tracking Base
 
-1. Run the command `Source Tools: Git Tracking` from the command palette
+1. Run the command `SourceTracker: Git Tracking` from the command palette
 2. Select from the quick pick menu:
     - `BRANCH` - Automatically detect the branch tracking base
     - `HEAD` - Track changes since the current commit
@@ -58,7 +58,7 @@ The Snapshot feature lets you take a point-in-time capture of a file:
 
 ### Visual Indicators
 
-After setting a tracking base, Source Tools will display:
+After setting a tracking base, Source Tracker will display:
 
 - **Green indicators** in the gutter for added lines
 - **Blue indicators** in the gutter for modified lines
@@ -69,15 +69,8 @@ After setting a tracking base, Source Tools will display:
 
 Access all changed files quickly:
 
-- Run `SourceTools: Open Tracked Files` to open all files modified since your tracking base
-- Run `SourceTools: Open Changed Files` to open all files modified since your last commit
-
-## Extension Settings
-
-This extension contributes the following settings:
-
-* `sourceTools.trackingBaseRef`: The git reference to compare against
-* `sourceTools.useTreeColor`: Enable/disable colorization in the file explorer
+- Run `SourceTracker: Open Tracked Files` to open all files modified since your tracking base
+- Run `SourceTracker: Open Changed Files` to open all files modified since your last commit
 
 ## Requirements
 
