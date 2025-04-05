@@ -19,7 +19,7 @@ Source Tracker allows you to visually track code changes against **any** git ref
 - **Line-level indicators** show added, modified, and removed lines
 - **File explorer badges** show new and modified files
 - **Flexible base ref selection** - track against any branch, commit, or automatic detection
-- **Compatible with other git tools** - uses the leftmost gutter, allowing you to see Source Tracker and GitHub/GitLens indicators simultaneously
+- **Compatible with other git tools** - uses the leftmost gutter, allowing you to see Source Tracker and built in git indicators simultaneously
 
 ![Feature Screenshot](resources/screenshot.png)
 
