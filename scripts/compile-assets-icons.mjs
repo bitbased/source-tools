@@ -6,8 +6,6 @@ import { fileURLToPath } from 'url';
 import { generateFonts } from 'fantasticon';
 import { count } from 'console';
 
-// let's use fantasticon instead?!!!
-// Get current directory (equivalent to __dirname in CommonJS)
 // Get current directory (equivalent to __dirname in CommonJS)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -139,7 +137,7 @@ async function generateFont() {
 
     // List of files to remove
     const filesToRemove = [
-      // `${fontDir}/${fontName}.json`,
+      `${fontDir}/${fontName}.json`,
       // `${fontDir}/${fontName}.html`,
       // `${fontDir}/${fontName}.css`,
       // `${fontDir}/${fontName}.scss`,

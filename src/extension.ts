@@ -24,7 +24,7 @@ interface CustomFileDecorationProvider extends vscode.FileDecorationProvider {
 
 class VirtualGitDiff {
   private baseRef: string;
-  private useTreeColor: Boolean = true;
+  private displayOptions: string = 'gutter overview tree-color tree-badges';
   private addedLineDecoration!: vscode.TextEditorDecorationType;
   private createdLineDecoration!: vscode.TextEditorDecorationType;
   private removedLineDecoration!: vscode.TextEditorDecorationType;
@@ -82,7 +82,7 @@ class VirtualGitDiff {
     // Load the persisted base ref from context, or default to empty string
     this.baseRef = this.context.workspaceState.get<string>('sourceTracker.trackingBaseRef', '');
 
-    this.useTreeColor = this.context.workspaceState.get<boolean>('sourceTracker.useTreeColor', true);
+    this.displayOptions = this.context.workspaceState.get<string>('sourceTracker.displayOptions', 'gutter overview tree-color tree-badges');
     this.outputLevel = this.context.globalState.get<string>('sourceTracker.outputLevel', 'error');
     this.consoleLevel = this.context.globalState.get<string>('sourceTracker.consoleLevel', 'error warn');
 
@@ -103,60 +103,99 @@ class VirtualGitDiff {
   }
 
   private initDecorations() {
+    this.displayOptions = this.context.workspaceState.get<string>('sourceTracker.displayOptions', 'gutter overview tree-color tree-badges');
+
+    // Check which display methods to use
+    const useGutterIcons = this.displayOptions.includes('gutter');
+    const useBorder = this.displayOptions.includes('border');
+    const useOverview = this.displayOptions.includes('overview');
+    const useBackground = /\bbackground\b(?!-)/.test(this.displayOptions);
+    const useModifiedBackground = this.displayOptions.includes('background-modified');
+    const useTreeBadges = this.displayOptions.includes('tree-badges');
+    const useTreeColor = this.displayOptions.includes('tree-color');
+
+    // Create decorations based on selected display methods
     this.removedLineDecoration = vscode.window.createTextEditorDecorationType({
-      isWholeLine: false,
-      gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-removed.svg')),
-      gutterIconSize: 'contain',
-      // overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.deletedForeground'),
-      overviewRulerColor: 'rgba(225, 66, 64, 0.25)', // Red with 0.25 opacity
-      overviewRulerLane: vscode.OverviewRulerLane.Left
+      isWholeLine: true,
+      ...(useGutterIcons ? {
+        gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-removed.svg')),
+        gutterIconSize: 'contain',
+      } : {}),
+      ...(useBorder || useBackground ? {
+        borderStyle: 'solid',
+        borderWidth: '1px 0 0 0',
+        borderColor: new vscode.ThemeColor('editorGutter.deletedBackground'),
+      } : {}),
+      // ...(useBackground ? {
+      //   backgroundColor: new vscode.ThemeColor('diffEditor.removedTextBackground'),
+      // } : {}),
+      ...(useOverview ? {
+        overviewRulerColor: 'rgba(225, 66, 64, 0.25)', // Red with 0.25 opacity
+        overviewRulerLane: vscode.OverviewRulerLane.Left
+      } : {})
     });
 
     this.changedLineDecoration = vscode.window.createTextEditorDecorationType({
       isWholeLine: true,
-      gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-changed.svg')),
-      gutterIconSize: 'contain',
-
-      borderStyle: 'solid',
-      borderWidth: '0 0 0 3px',
-      borderColor: new vscode.ThemeColor('editorGutter.modifiedBackground'),
-
-      // overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.modifiedForeground'),
-      overviewRulerColor: 'rgba(66, 133, 244, 0.25)', // Blue with 0.25 opacity
-      overviewRulerLane: vscode.OverviewRulerLane.Left
+      ...(useGutterIcons ? {
+        gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-changed.svg')),
+        gutterIconSize: 'contain',
+      } : {}),
+      ...(useBorder ? {
+        borderStyle: 'solid',
+        borderWidth: '0 0 0 3px',
+        borderColor: new vscode.ThemeColor('editorGutter.modifiedBackground'),
+      } : {}),
+      ...(useModifiedBackground ? {
+        backgroundColor: 'rgba(66, 133, 244, 0.1)',
+      } : {}),
+      ...(useOverview ? {
+        overviewRulerColor: 'rgba(66, 133, 244, 0.25)', // Blue with 0.25 opacity
+        overviewRulerLane: vscode.OverviewRulerLane.Left
+      } : {})
     });
 
     this.addedLineDecoration = vscode.window.createTextEditorDecorationType({
       isWholeLine: true,
-      gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-added.svg')),
-      gutterIconSize: 'contain',
-
-      borderStyle: 'solid',
-      borderWidth: '0 0 0 3px',
-      borderColor: new vscode.ThemeColor('editorGutter.addedBackground'),
-
-      // overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.addedForeground'),
-      overviewRulerColor: 'rgba(82, 183, 136, 0.25)', // Green with 0.25 opacity
-      overviewRulerLane: vscode.OverviewRulerLane.Left
+      ...(useGutterIcons ? {
+        gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-added.svg')),
+        gutterIconSize: 'contain',
+      } : {}),
+      ...(useBorder ? {
+        borderStyle: 'solid',
+        borderWidth: '0 0 0 3px',
+        borderColor: new vscode.ThemeColor('editorGutter.addedBackground'),
+      } : {}),
+      ...(useBackground ? {
+        backgroundColor: new vscode.ThemeColor('diffEditor.insertedTextBackground'),
+      } : {}),
+      ...(useOverview ? {
+        overviewRulerColor: 'rgba(82, 183, 136, 0.25)', // Green with 0.25 opacity
+        overviewRulerLane: vscode.OverviewRulerLane.Left
+      } : {})
     });
 
     this.createdLineDecoration = vscode.window.createTextEditorDecorationType({
       isWholeLine: true,
-      gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-created.svg')),
-      gutterIconSize: 'contain',
-
-      borderStyle: 'solid',
-      borderWidth: '0 0 0 3px',
-      borderColor: new vscode.ThemeColor('editorGutter.addedBackground'),
-
-      // overviewRulerColor: 'rgba(140, 212, 105, 0.1)'
-      // overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.addedForeground'),
-      // overviewRulerLane: vscode.OverviewRulerLane.Left
+      ...(useGutterIcons ? {
+        gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-created.svg')),
+        gutterIconSize: 'contain',
+      } : {}),
+      ...(useBorder ? {
+        borderStyle: 'solid',
+        borderWidth: '0 0 0 3px',
+        borderColor: new vscode.ThemeColor('editorGutter.addedBackground'),
+      } : {}),
+      ...(useBackground ? {
+        backgroundColor: new vscode.ThemeColor('diffEditor.insertedTextBackground'),
+      } : {})
     });
 
     // Create file decorations for the explorer
-    this.addedFileDecoration = this.createFileDecorationProvider('a', new vscode.ThemeColor('gitDecoration.addedResourceForeground')) as CustomFileDecorationProvider;
-    this.modifiedFileDecoration = this.createFileDecorationProvider('m', new vscode.ThemeColor('gitDecoration.modifiedResourceForeground')) as CustomFileDecorationProvider;
+    if (!this.addedFileDecoration && !this.modifiedFileDecoration) {
+      this.addedFileDecoration = this.createFileDecorationProvider('a', new vscode.ThemeColor('gitDecoration.addedResourceForeground')) as CustomFileDecorationProvider;
+      this.modifiedFileDecoration = this.createFileDecorationProvider('m', new vscode.ThemeColor('gitDecoration.modifiedResourceForeground')) as CustomFileDecorationProvider;
+    }
   }
 
   /**
@@ -183,10 +222,21 @@ class VirtualGitDiff {
       // Custom method to update decorated files
       setFiles: (files: string[]): void => {
         decoratedFiles.clear();
+        const useTreeColor = this.displayOptions.includes('tree-color');
+        const useTreeBadges = this.displayOptions.includes('tree-badges');
         files.forEach(file => {
-          if (this.useTreeColor) {
+
+          if (!useTreeBadges && !useTreeColor) {
+            return; // Skip if tree badges are disabled
+          }
+
+          if (useTreeColor && useTreeBadges) {
             decoratedFiles.set(file, {
               badge,
+              color
+            });
+          } else if (useTreeColor && !useTreeBadges) {
+            decoratedFiles.set(file, {
               color
             });
           } else {
@@ -258,6 +308,10 @@ class VirtualGitDiff {
         this.debug.log('>>> sourceTracker.debugOptions', args);
         this.selectDebugLevel();
       }),
+      vscode.commands.registerCommand('sourceTracker.displayOptions', (...args) => {
+        this.debug.log('>>> sourceTracker.displayOptions', args);
+        this.selectDisplayOptions(...args);
+      }),
       vscode.commands.registerCommand('sourceTracker.gitTrackingOptions', (...args) => {
         this.debug.log('>>> sourceTracker.gitTrackingOptions', args);
         this.selectBaseRef();
@@ -276,11 +330,6 @@ class VirtualGitDiff {
       }),
       vscode.commands.registerCommand('sourceTracker.openChangedFiles', (force) => this.openChangedFiles(force)),
       vscode.commands.registerCommand('sourceTracker.openTrackedFiles', (force) => this.openTrackedFiles(force)),
-      vscode.commands.registerCommand('sourceTracker.toggleTreeColor', async () => {
-        this.useTreeColor = !this.useTreeColor;
-        await this.context.workspaceState.update('sourceTracker.useTreeColor', this.useTreeColor);
-        this.scheduleFileExplorerUpdate(true);
-      }),
       vscode.workspace.onDidChangeTextDocument(e => this.handleDocChange(e)),
       vscode.workspace.onDidSaveTextDocument(() => this.scheduleFileExplorerUpdate()),
       vscode.window.onDidChangeActiveTextEditor(editor => this.handleActiveEditorChange(editor))
@@ -304,7 +353,137 @@ class VirtualGitDiff {
 
     setTimeout(() => {
       this.updateActiveEditorContext();
-    }, 1000);
+    }, 500);
+  }
+
+  private async selectDisplayOptions(forceDisplayOptions: string|undefined = undefined) {
+    this.debug.log('selectDisplayOptions called.');
+
+    if (forceDisplayOptions) {
+      // Directly apply the provided options without showing the UI
+      this.displayOptions = forceDisplayOptions;
+      await this.context.workspaceState.update('sourceTracker.displayOptions', this.displayOptions);
+      this.clearDecorations();
+      this.initDecorations();
+      this.updateDecorations();
+      this.scheduleFileExplorerUpdate(true);
+      this.debug.info(`Updated change display options: ${this.displayOptions}`);
+      return;
+    }
+    // Define display options
+    const displayOptions = [
+      {
+        label: 'Gutter',
+        detail: 'Show icons in the gutter for added, modified, and removed lines',
+        picked: this.displayOptions.includes('gutter'),
+        value: 'gutter'
+      },
+      {
+        label: 'Overview',
+        detail: 'Show markers in the scrollbar/overview ruler',
+        picked: this.displayOptions.includes('overview'),
+        value: 'overview'
+      },
+      {
+        label: 'Borders',
+        detail: 'Show colored borders on changed lines',
+        picked: this.displayOptions.includes('border'),
+        value: 'border'
+      },
+      {
+        label: 'Background (for additions)',
+        detail: 'Highlight added lines with background color',
+        picked: /\bbackground\b(?!-)/.test(this.displayOptions),
+        value: 'background'
+      },
+      {
+        label: 'Background (for changes)',
+        detail: 'Highlight changed lines with background color',
+        picked: this.displayOptions.includes('background-modified'),
+        value: 'background-modified'
+      }
+      ,
+      {
+        label: 'Tree Badges',
+        detail: 'Show badges (a/m) in file explorer for added/modified files',
+        picked: this.displayOptions.includes('tree-badges'),
+        value: 'tree-badges'
+      },
+      {
+        label: 'Tree Color',
+        detail: 'Color the badges in file explorer based on file status',
+        picked: this.displayOptions.includes('tree-color'),
+        value: 'tree-color'
+      }
+    ];
+
+    const quickPick = vscode.window.createQuickPick();
+    quickPick.placeholder = 'Choose how to display tracked changes';
+    quickPick.canSelectMany = true;
+    quickPick.items = displayOptions;
+
+    // Set initially selected items based on current display options
+    quickPick.selectedItems = displayOptions.filter(item => item.picked);
+
+    return new Promise<void>(resolve => {
+      quickPick.onDidChangeSelection(async items => {
+        // Preview the changes immediately when selection changes
+        const selectedOptions = items
+          .map(item => (item as any).value)
+          .join(' ');
+
+        if (selectedOptions && selectedOptions !== this.displayOptions) {
+          // Temporarily apply the new display options
+          const originalDisplay = this.displayOptions;
+          this.displayOptions = selectedOptions;
+          await this.context.workspaceState.update('sourceTracker.displayOptions', this.displayOptions);
+
+          this.clearDecorations();
+          this.initDecorations();
+          this.updateDecorations();
+          this.scheduleFileExplorerUpdate(true);
+
+          // This is just a preview - we'll only persist on Accept
+          this.debug.log(`Previewing display options: ${selectedOptions}`);
+        }
+      });
+
+      quickPick.onDidAccept(async () => {
+        // Get selected display methods
+        const selectedOptions = quickPick.selectedItems
+          .map(item => (item as any).value)
+          .join(' ');
+
+        // Update display options if changed
+        if (this.displayOptions !== selectedOptions && quickPick.selectedItems.length > 0) {
+          this.displayOptions = selectedOptions;
+          await this.context.workspaceState.update('sourceTracker.displayOptions', this.displayOptions);
+
+          this.clearDecorations();
+          // Reinitialize decorations with new display options
+          this.initDecorations();
+
+          // Update decorations for the active editor
+          this.updateDecorations();
+          this.scheduleFileExplorerUpdate(true);
+
+          vscode.window.showInformationMessage(`Change display options updated`);
+          this.debug.info(`Updated change display options: ${this.displayOptions}`);
+        } else if (quickPick.selectedItems.length === 0) {
+          vscode.window.showWarningMessage('At least one display option must be selected');
+        }
+
+        quickPick.hide();
+        resolve();
+      });
+
+      quickPick.onDidHide(() => {
+        quickPick.dispose();
+        resolve();
+      });
+
+      quickPick.show();
+    });
   }
 
   private async selectDebugLevel() {
@@ -454,22 +633,21 @@ class VirtualGitDiff {
     const activeSnapshot = this.snapshotManager?.getActiveSnapshot(filePath);
 
     // Create QuickPickItems for each snapshot
-    const snapshotItems: vscode.QuickPickItem[] = snapshots.map(snapshot => {
+    const snapshotItems: (vscode.QuickPickItem & { actionId?: string })[] = snapshots.map(snapshot => {
       // Check if this is the active snapshot
       const isActive = activeSnapshot && snapshot.id === activeSnapshot.id;
       return {
         label: isActive
-          ? `$(triangle-right) ${this.getRelativeTimeString(snapshot.timestamp)}`
-          : (activeSnapshot ? `$(blank) ${this.getRelativeTimeString(snapshot.timestamp)}` : `${this.getRelativeTimeString(snapshot.timestamp)}`),
+          ? `$(triangle-right)${this.getRelativeTimeString(snapshot.timestamp)}`
+          : (activeSnapshot ? `$(blank)${this.getRelativeTimeString(snapshot.timestamp)}` : `$(blank)${this.getRelativeTimeString(snapshot.timestamp)}`),
         description: snapshot.message || 'No description',
-        id: snapshot.id
+        actionId: `snapshot:${snapshot.id}`
       };
     });
 
-    // the separators are putting the lavbels over the items, instead of space betweeen!!!
-    const options: vscode.QuickPickItem[] = [
+    const options: (vscode.QuickPickItem & { actionId?: string })[] = [
       ...(activeSnapshot ? [
-        { label: '$(close)', description: 'Deactivate Snapshot' },
+        { label: '$(circle-slash)', description: 'Disable Snapshot', actionId: 'disable-snapshot' },
       ] : []),
       ... snapshotItems?.length ? [
         { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
@@ -478,11 +656,18 @@ class VirtualGitDiff {
       ...snapshotItems,
       { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
       { label: '', description: 'Snapshot Actions', kind: vscode.QuickPickItemKind.Default },
-      { label: 'Delete Active Snapshot', description: 'Clear the current snapshot' },
-      { label: 'Delete File Snapshots', description: 'Clear all file snapshots' },
-      { label: 'Restore From Snapshot', description: 'Restore file from snapshot state' },
+      ...(activeSnapshot ? [
+        { label: '$(discard) Revert To Snapshot', description: 'Restore file to snapshot state', actionId: 'revert-snapshot' },
+        { label: '$(error) Delete Active Snapshot', description: 'Clear the current snapshot', actionId: 'delete-active-snapshot' },
+      ] : []),
+      { label: '$(clear-all) Delete File Snapshots', description: 'Clear all snapshots for this file', actionId: 'delete-all-snapshots' },
       { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
-      { label: 'Take Snapshot', description: 'Type a message to take a new snapshot' }
+      { label: '', description: 'Tracking Actions', kind: vscode.QuickPickItemKind.Default },
+      { label: '$(device-camera) Take Snapshot', description: 'Type a message to take a new snapshot', actionId: 'take-snapshot' },
+      { label: '$(sti-snapshot-compare) Diff tracked file', description: 'Diff current file against snapshot', actionId: 'diff-tracked-file' },
+      { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
+      { label: '$(sti-tracking-base-alt) Git Tracking', description: 'Open git tracking options', actionId: 'git-tracking' },
+      { label: '$(sti-tracking-options-alt) Display Options', description: 'Open tracking display options', actionId: 'display-options' }
     ];
 
     const quickPick = vscode.window.createQuickPick();
@@ -490,24 +675,28 @@ class VirtualGitDiff {
     quickPick.items = options;
     // Set currently active snapshot as selected if one exists
     if (activeSnapshot) {
-      const activeItem = snapshotItems.find(item => 'id' in item && item.id === activeSnapshot.id);
+      const activeItem = snapshotItems.find(item => item.actionId === `snapshot:${activeSnapshot.id}`);
       if (activeItem) {
         quickPick.activeItems = [activeItem];
       }
     } else {
       // Set "Take Snapshot" as the default option when no active snapshot exists
-      const takeSnapshotItem = options.find(item => item.label === 'Take Snapshot');
+      const takeSnapshotItem = options.find(item => item.actionId === 'take-snapshot');
       if (takeSnapshotItem) {
         quickPick.activeItems = [takeSnapshotItem];
       }
     }
-    quickPick.title = 'SourceTracker: Manage Snapshots';
+    // quickPick.title = 'SourceTracker: Manage Snapshots';
     quickPick.canSelectMany = false;
     quickPick.ignoreFocusOut = false;
 
     quickPick.onDidChangeValue(() => {
       // Refresh the list when user types, but keep the custom value at top
-      const customItem = { label: quickPick.value, description: 'Take new snapshot' };
+      const customItem = {
+        label: quickPick.value,
+        description: 'Take new snapshot',
+        actionId: 'custom-snapshot'
+      };
       const filteredItems = options.filter(item =>
         item.label.toLowerCase().includes(quickPick.value.toLowerCase())
       );
@@ -522,17 +711,28 @@ class VirtualGitDiff {
 
     quickPick.onDidAccept(() => {
       this.debug.log('onDidAccept', quickPick.value, quickPick.items, quickPick.selectedItems);
-      const selectedItem = quickPick.selectedItems[0];
+      const selectedItem = quickPick.selectedItems[0] as (vscode.QuickPickItem & { actionId?: string });
+
       if (selectedItem) {
-        if (selectedItem.label === 'Restore From Snapshot') {
+        const actionId = selectedItem.actionId;
+
+        if (actionId === 'revert-snapshot') {
           this.restoreFromSnapshot(filePath);
-        } else if (selectedItem.label === 'Delete Active Snapshot') {
+        } else if (actionId === 'delete-active-snapshot') {
           this.clearSnapshot(filePath);
-        } else if (selectedItem.label === 'Delete File Snapshots') {
+        } else if (actionId === 'delete-all-snapshots') {
           this.clearSnapshot(filePath, true);
-        } else if (selectedItem.description === 'Deactivate Snapshot') {
+        } else if (actionId === 'disable-snapshot') {
           this.deactivateSnapshot(filePath);
-        } else if (selectedItem.description === 'Take new snapshot' || selectedItem.label === 'Take Snapshot') {
+        } else if (actionId === 'diff-tracked-file') {
+          this.diffTrackedFile();
+        } else if (actionId === 'display-options') {
+          quickPick.hide();
+          vscode.commands.executeCommand('sourceTracker.displayOptions');
+          return;
+        } else if (actionId === 'git-tracking') {
+          this.selectBaseRef(serializedUri);
+        } else if (actionId === 'custom-snapshot' || actionId === 'take-snapshot') {
           // Only take snapshot if there's a message
           if (quickPick.value.trim()) {
             this.debug.log('SNAPSHOT >>> ', quickPick.value);
@@ -551,10 +751,11 @@ class VirtualGitDiff {
               }
             });
           }
-        } else {
+        } else if (actionId && actionId.startsWith('snapshot:')) {
           // A specific snapshot was selected - activate it
-          if ('id' in selectedItem && this.snapshotManager) {
-            this.snapshotManager.setActiveSnapshot(filePath, selectedItem.id?.toString());
+          const snapshotId = actionId.substring('snapshot:'.length);
+          if (this.snapshotManager) {
+            this.snapshotManager.setActiveSnapshot(filePath, snapshotId);
             vscode.window.showInformationMessage(`Activated snapshot: ${selectedItem.description}`);
             this.updateActiveEditorContext();
             this.updateDecorations();
@@ -1014,7 +1215,7 @@ class VirtualGitDiff {
     }
   }
 
-  private async selectBaseRef() {
+  private async selectBaseRef(serializedUri: any = undefined) {
     this.debug.log('selectBaseRef called.');
 
     // Get changed files count if base ref is set
@@ -1052,8 +1253,9 @@ class VirtualGitDiff {
               const hash = parts[0];
               const message = parts.slice(1).join(' ');
               return {
-                label: hash,
-                description: message.length > 80 ? message.substring(0, 77) + '...' : message
+                label: `$(blank)${hash}`,
+                description: message.length > 80 ? message.substring(0, 77) + '...' : message,
+                actionId: `commit:${hash}`
               };
             });
           }
@@ -1063,119 +1265,195 @@ class VirtualGitDiff {
       }
     }
 
-    // Define common options
-    const commonOptions: vscode.QuickPickItem[] = [
-      { label: '', description: 'Disable tracking' },
-      { label: 'BRANCH', description: 'Auto-detect branch tracking/main base' },
-      { label: 'HEAD', description: 'Current checked out commit' },
-      { label: 'HEAD~1', description: 'Previous commit' },
-      { label: 'develop', description: 'Develop branch' },
-      { label: 'master main', description: 'Main branch' },
+    // Define quick pick items with actionId
+    const options: (vscode.QuickPickItem & { actionId?: string })[] = [
+      { label: '$(circle-slash)', description: 'Disable tracking', actionId: 'disable-tracking' },
+      { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
+      { label: '', description: 'Tracking Refs' },
+      { label: '$(blank)BRANCH', description: 'Auto-detect branch tracking/main base', actionId: 'BRANCH' },
+      { label: '$(blank)HEAD', description: 'Current checked out commit', actionId: 'HEAD' },
+      { label: '$(blank)HEAD~1', description: 'Previous commit', actionId: 'HEAD~1' },
+      { label: '$(blank)develop', description: 'Develop branch', actionId: 'develop' },
+      { label: '$(blank)master or main', description: 'Main branch', actionId: 'master main trunk default' },
       { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
       ...recentCommits,
       { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
-      { label: this.useTreeColor ? 'Disable file color' : 'Enable file color', description: 'Toggle tracking colors in file tree' },
-      { label: 'Open tracked files', description: trackedFilesCount > 0 ? `Open ${trackedFilesCount} tracked file changes` : 'Open tracked file changes' },
-      { label: 'Open changed files', description: changedFilesCount > 0 ? `Open ${changedFilesCount} changed files since last commit` : 'Open changed files since last commit' },
-      { label: 'Diff tracked file', description: 'Diff current file against tracked ref' }
+      { label: '', description: 'Tracking Actions' },
+      { label: '$(files) Open tracked files', description: trackedFilesCount > 0 ? `Open ${trackedFilesCount} tracked file changes` : 'Open tracked file changes', actionId: 'open-tracked-files' },
+      { label: '$(files) Open changed files', description: changedFilesCount > 0 ? `Open ${changedFilesCount} changed files since last commit` : 'Open changed files since last commit', actionId: 'open-changed-files' },
+      { label: '$(sti-tracking-compare) Diff tracked file', description: 'Diff current file against tracked ref', actionId: 'diff-tracked-file' },
+      { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
+      { label: '$(sti-snapshot-options-alt) Snapshot Tracking', description: 'Open snapshot tracking options', actionId: 'snapshot-tracking' },
+      { label: '$(sti-tracking-options-alt) Display Options', description: 'Open tracking display options', actionId: 'display-options' }
     ];
 
-    // Add current base ref to options if it exists and isn't already in the list
-    const commonLabels = commonOptions.map(opt => opt.label);
-    if (this.baseRef && !commonLabels.includes(this.baseRef)) {
-      commonOptions.unshift({ label: this.baseRef, description: 'Current base ref' });
+    const commonActionIds = options.map(opt => opt.actionId)?.filter(b => b);
+    if (this.baseRef &&
+      !commonActionIds.includes(`ref:${this.baseRef}`) &&
+      !commonActionIds.includes(`commit:${this.baseRef}`) &&
+      !commonActionIds.includes(this.baseRef)) {
+      // Add the active base ref as the first option after the tracking refs section header
+      const trackingRefsIndex = options.findIndex(item => item.description === 'Tracking Refs');
+      if (trackingRefsIndex !== -1) {
+        options.splice(trackingRefsIndex + 1, 0, { label: `$(triangle-right)${this.baseRef}`, description: 'Current tracking ref', actionId: `ref:${this.baseRef}` });
+      } else {
+        options.unshift({ label: `$(triangle-right)${this.baseRef}`, description: 'Current tracking ref', actionId: `ref:${this.baseRef}` });
+      }
     }
 
-    // Create quick pick with input box and set current ref as active item
     const quickPick = vscode.window.createQuickPick();
     quickPick.placeholder = 'Select or type a git tracking base';
-    quickPick.items = commonOptions;
-    quickPick.title = 'SourceTracker: Select Git Tracking Base';
+    quickPick.items = options;
     quickPick.canSelectMany = false;
     quickPick.ignoreFocusOut = false;
 
     // Set the current base ref as the active item if it exists
     if (this.baseRef) {
-      const currentItem = commonOptions.find(item => item.label === this.baseRef);
+      // Find the item by actionId instead of label
+      const currentItem = options.find(item =>
+        item.actionId === `ref:${this.baseRef}` ||
+        item.actionId === `commit:${this.baseRef}` ||
+        item.actionId === this.baseRef);
       if (currentItem) {
+        // Update the label icon from $(blank) to $(triangle-right)
+        if (currentItem.label.startsWith('$(blank)')) {
+          currentItem.label = currentItem.label.replace('$(blank)', '$(triangle-right)');
+        }
         quickPick.activeItems = [currentItem];
       }
     } else {
-      quickPick.activeItems = [commonOptions[0]];
+      quickPick.activeItems = [options[0]];
     }
+    quickPick.items = options;
 
-    let input: string | undefined;
-
-    // Create promise to handle selection
-    const promise = new Promise<string | undefined>(resolve => {
+    return new Promise<void>(resolve => {
       quickPick.onDidChangeValue(() => {
         // Refresh the list when user types, but keep the custom value at top
-        const customItem = { label: quickPick.value, description: 'Custom commit hash or branch name' };
-        const filteredItems = commonOptions.filter(item =>
+        const customItem = {
+          label: quickPick.value,
+          description: 'Custom commit hash or branch name',
+          actionId: 'custom-ref'
+        };
+        const filteredItems = options.filter(item =>
           item.label.toLowerCase().includes(quickPick.value.toLowerCase())
         );
 
         // Only add custom item if it's not empty and not exactly matching an existing option
-        if (quickPick.value && !commonOptions.some(item => item.label === quickPick.value)) {
+        if (quickPick.value && !options.some(item => item.label === quickPick.value)) {
           quickPick.items = [customItem, ...filteredItems];
         } else {
           quickPick.items = filteredItems;
         }
       });
 
-      quickPick.onDidAccept(() => {
-        // When user accepts an item (or custom input)
-        if (quickPick.selectedItems.length > 0) {
-          input = quickPick.selectedItems[0].label;
-        } else {
-          input = quickPick.value;
+      quickPick.onDidAccept(async () => {
+        const selectedItem = quickPick.selectedItems[0] as (vscode.QuickPickItem & { actionId?: string });
+
+        const actionId = selectedItem?.actionId || '';
+
+        // Disable any active snapshot tracking for the current file before setting baseRef
+        if (vscode.window.activeTextEditor) {
+          if ((!selectedItem && !quickPick.value.trim() && quickPick.value.trim()) || (
+            actionId.startsWith('ref:') || actionId.startsWith('commit:') || ['BRANCH', 'HEAD', 'HEAD~1', 'develop', 'master main trunk default', 'disable-tracking'].includes(actionId)
+          )) {
+            const currentFilePath = vscode.window.activeTextEditor.document.uri.fsPath;
+            if (this.snapshotManager && this.snapshotManager.getActiveSnapshot(currentFilePath)) {
+              this.debug.log(`Disabling snapshot tracking for ${currentFilePath} before setting baseRef`);
+              this.snapshotManager.setActiveSnapshot(currentFilePath, undefined);
+              this.updateActiveEditorContext();
+            }
+          }
         }
+
+        if (!selectedItem) {
+          // If no item is selected but there's input text - treat as custom ref
+          if (quickPick.value.trim()) {
+            this.baseRef = quickPick.value.trim();
+            await this.setBaseRef(this.baseRef);
+          }
+          quickPick.hide();
+          resolve();
+          return;
+        }
+
+        if (actionId === 'disable-tracking') {
+          // Disable tracking
+          this.baseRef = '';
+          await this.setBaseRef('');
+        } else if (actionId === 'open-tracked-files') {
+          // Open tracked files command
+          vscode.commands.executeCommand('sourceTracker.openTrackedFiles', true);
+        } else if (actionId === 'open-changed-files') {
+          // Open changed files command
+          vscode.commands.executeCommand('sourceTracker.openChangedFiles', true);
+        } else if (actionId === 'diff-tracked-file') {
+          // Diff tracked file command
+          vscode.commands.executeCommand('sourceTracker.diffTrackedFile', true);
+        } else if (actionId === 'snapshot-tracking') {
+          // Open snapshot tracking options
+          quickPick.hide();
+          this.selectSnapshotTrackingOptions(serializedUri);
+          return;
+        } else if (actionId === 'display-options') {
+          // Open display options
+          quickPick.hide();
+          vscode.commands.executeCommand('sourceTracker.displayOptions');
+          return;
+        } else if (actionId === 'custom-ref') {
+          // Custom ref from input text
+          this.baseRef = quickPick.value.trim();
+          await this.setBaseRef(this.baseRef);
+        } else if (actionId.startsWith('commit:')) {
+          // Commit hash selected - extract the hash
+          const commitHash = actionId.substring('commit:'.length);
+          this.baseRef = commitHash;
+          await this.setBaseRef(this.baseRef);
+        } else if (actionId.startsWith('ref:')) {
+          // Existing ref selected - extract the ref name
+          const refName = actionId.substring('ref:'.length);
+          this.baseRef = refName;
+          await this.setBaseRef(this.baseRef);
+        } else if (actionId) {
+          // Other standard actions with specific actionId (branch, head, head~1, etc.)
+          this.baseRef = actionId;
+          await this.setBaseRef(this.baseRef);
+        } else {
+          // Handle items without an explicit actionId - use the label text
+          // Remove any icon prefix like $(blank) first
+          let refName = selectedItem.label.replace(/^\$\([^)]+\)/, '').trim();
+          this.baseRef = refName;
+          await this.setBaseRef(this.baseRef);
+        }
+
         quickPick.hide();
-        resolve(input);
+        resolve();
       });
 
       quickPick.onDidHide(() => {
-        resolve(input);
         quickPick.dispose();
+        resolve();
       });
+
+      quickPick.show();
     });
+  }
 
-    quickPick.show();
-    input = await promise;
-
-    if (input === undefined) {
-      this.debug.info('User canceled base ref input.');
-      return;
-    }
-
-    // Check if the input is one of the action commands
-    if (input === 'Enable file color' || input === 'Disable file color') {
-      vscode.commands.executeCommand('sourceTracker.toggleTreeColor');
-      return;
-    } else if (input === 'Open tracked files') {
-      vscode.commands.executeCommand('sourceTracker.openTrackedFiles', true);
-      return;
-    } else if (input === 'Open changed files') {
-      vscode.commands.executeCommand('sourceTracker.openChangedFiles', true);
-      return;
-    } else if (input === 'Diff tracked file') {
-      vscode.commands.executeCommand('sourceTracker.diffTrackedFile', true);
-      return;
-    }
-
-    this.baseRef = input.trim();
-
+  /**
+   * Sets the base ref and updates UI and context
+   * @param ref The reference to set as base
+   */
+  private async setBaseRef(ref: string) {
     // Persist the base ref to context
-    await this.context.workspaceState.update('sourceTracker.trackingBaseRef', this.baseRef);
-    this.debug.info(`Persisted baseRef to storage: ${this.baseRef}`);
+    await this.context.workspaceState.update('sourceTracker.trackingBaseRef', ref);
+    this.debug.info(`Persisted baseRef to storage: ${ref}`);
 
     // Update the VS Code context for when clauses
-    await vscode.commands.executeCommand('setContext', 'sourceTracker.trackingBaseRef', this.baseRef);
-    this.debug.log(`Updated context variable for when clauses: sourceTracker.trackingBaseRef = ${this.baseRef}`);
+    await vscode.commands.executeCommand('setContext', 'sourceTracker.trackingBaseRef', ref);
+    this.debug.log(`Updated context variable for when clauses: sourceTracker.trackingBaseRef = ${ref}`);
 
-    if (!this.baseRef) {
-      vscode.window.showInformationMessage('Virtual Git Diff disabled.');
-      this.debug.info('Base ref cleared. Virtual Git Diff disabled.');
+    if (!ref) {
+      vscode.window.showInformationMessage('Tracking disabled.');
+      this.debug.info('Base ref cleared. Tracking disabled.');
       this.clearDecorations();
       // Clear file explorer decorations
       (this.addedFileDecoration as any).setFiles([]);
@@ -1186,8 +1464,8 @@ class VirtualGitDiff {
         this.fileExplorerTimeout = undefined;
       }
     } else {
-      vscode.window.showInformationMessage(`Base ref set to: ${this.baseRef}`);
-      this.debug.info(`Base ref set to raw input: ${this.baseRef}`);
+      vscode.window.showInformationMessage(`Tracking ref set to: ${ref}`);
+      this.debug.info(`Base ref set to raw input: ${ref}`);
       this.updateDecorations();
       this.scheduleFileExplorerUpdate();
     }
@@ -1420,7 +1698,7 @@ class VirtualGitDiff {
         return;
       } catch (error) {
         this.debug.error(`Error using git.openChange: ${error}`);
-        vscode.window.showInformationMessage('No base ref set. Please set a base ref first.');
+        vscode.window.showInformationMessage('No tracking ref set. Please set a tracking ref first.');
         return;
       }
     }
@@ -1452,7 +1730,7 @@ class VirtualGitDiff {
           return;
         } catch (error) {
           this.debug.error(`Error using git.openChange: ${error}`);
-          vscode.window.showErrorMessage('Could not resolve base reference.');
+          vscode.window.showErrorMessage('Could not resolve tracking reference.');
         }
         return;
       }
@@ -1468,7 +1746,7 @@ class VirtualGitDiff {
           return;
         } catch (error) {
           this.debug.error(`Error using git.openChange: ${error}`);
-          vscode.window.showInformationMessage('File does not exist in the base reference.');
+          vscode.window.showInformationMessage('File does not exist in the tracking reference.');
         }
         return;
       }
@@ -1527,7 +1805,7 @@ class VirtualGitDiff {
     this.debug.log(`Active workspace folder: ${activeWorkspaceFolder?.uri.fsPath || 'none'}`);
 
     if (!this.baseRef) {
-      vscode.window.showInformationMessage('No base ref set. Please set a base ref first.');
+      vscode.window.showInformationMessage('No tracking ref set. Please set a tracking ref first.');
       return;
     }
 
@@ -1642,7 +1920,7 @@ class VirtualGitDiff {
       clearTimeout(this.fileExplorerTimeout);
     }
     // Use a longer debounce time (2 seconds) for file explorer updates
-    this.fileExplorerTimeout = setTimeout(() => this.updateFileExplorerDecorations(), immediate ? 250 : 1000);
+    this.fileExplorerTimeout = setTimeout(() => this.updateFileExplorerDecorations(), immediate ? 100 : 1000);
   }
 
   /**

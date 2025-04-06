@@ -2,7 +2,7 @@
   "name": "bitbased-source-tracker",
   "displayName": "Source Tracker",
   "description": "Track code changes against any git reference or snapshots (not just the current branch) with visual indicators that work alongside built-in git features",
-  "version": "0.2.7",
+  "version": "0.3.1",
   "publisher": "bitbased",
   "author": "Brant Wedel (https://bitbased.net)",
   "engines": {
@@ -30,46 +30,53 @@
           "fontCharacter": "\uf101"
         }
       },
+      "sti-tracking-options-alt": {
+        "description": "Source Tracker tracking options alt icon",
+        "default": {
+          "fontPath": "./resources/source-tracker-icons.woff",
+          "fontCharacter": "\uf102"
+        }
+      },
       "sti-tracking-compare": {
         "description": "Source Tracker tracking compare icon",
         "default": {
           "fontPath": "./resources/source-tracker-icons.woff",
-          "fontCharacter": "\uf102"
+          "fontCharacter": "\uf103"
         }
       },
       "sti-tracking-base": {
         "description": "Source Tracker tracking base icon",
         "default": {
           "fontPath": "./resources/source-tracker-icons.woff",
-          "fontCharacter": "\uf103"
+          "fontCharacter": "\uf104"
         }
       },
       "sti-tracking-base-alt": {
         "description": "Source Tracker tracking base alt icon",
         "default": {
           "fontPath": "./resources/source-tracker-icons.woff",
-          "fontCharacter": "\uf104"
+          "fontCharacter": "\uf105"
         }
       },
       "sti-snapshot-options": {
         "description": "Source Tracker snapshot options icon",
         "default": {
           "fontPath": "./resources/source-tracker-icons.woff",
-          "fontCharacter": "\uf105"
+          "fontCharacter": "\uf106"
         }
       },
       "sti-snapshot-options-alt": {
         "description": "Source Tracker snapshot options alt icon",
         "default": {
           "fontPath": "./resources/source-tracker-icons.woff",
-          "fontCharacter": "\uf106"
+          "fontCharacter": "\uf107"
         }
       },
       "sti-snapshot-compare": {
         "description": "Source Tracker snapshot compare icon",
         "default": {
           "fontPath": "./resources/source-tracker-icons.woff",
-          "fontCharacter": "\uf107"
+          "fontCharacter": "\uf108"
         }
       }
     },
@@ -81,8 +88,8 @@
       },
       {
         "command": "sourceTracker.debugOptions",
-        "title": "SourceTracker: Debug",
-        "icon": "$(output)"
+        "title": "SourceTracker: Debug Options",
+        "icon": "$(debug-console)"
       },
       {
         "command": "sourceTracker.openTrackedFiles",
@@ -110,9 +117,9 @@
         "icon": "$(sti-tracking-compare)"
       },
       {
-        "command": "sourceTracker.toggleTreeColor",
-        "title": "SourceTracker: Toggle File Color",
-        "icon": "$(symbol-color)"
+        "command": "sourceTracker.displayOptions",
+        "title": "SourceTracker: Display Options",
+        "icon": "$(sti-tracking-options-alt)"
       }
     ],
     "menus": {
@@ -121,6 +128,11 @@
           "command": "sourceTracker.gitTrackingOptions",
           "when": "view == workbench.explorer.fileView",
           "group": "navigation"
+        },
+        {
+          "command": "sourceTracker.debugOptions",
+          "when": "view == workbench.panel.output && activeOutputChannel =~ /SourceTracker/",
+          "group": "navigation@1.5"
         }
       ],
       "editor/title": [
@@ -157,6 +169,10 @@
         },
         {
           "command": "sourceTracker.diffFileSnapshot",
+          "when": "false"
+        },
+        {
+          "command": "sourceTracker.debugOptions",
           "when": "false"
         }
       ]
