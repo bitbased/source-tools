@@ -10,6 +10,13 @@ interface DiffRange {
   endLine: number;
 }
 
+interface DebugHandler {
+  log(message: string, ...args: any[]): void;
+  warn(message: string, ...args: any[]): void;
+  error(message: string, ...args: any[]): void;
+  info(message: string, ...args: any[]): void;
+}
+
 // Define a custom interface that extends FileDecorationProvider
 interface CustomFileDecorationProvider extends vscode.FileDecorationProvider {
   setFiles(files: string[]): void;
@@ -26,9 +33,47 @@ class VirtualGitDiff {
   private modifiedFileDecoration!: CustomFileDecorationProvider;
   private diffTimeout?: NodeJS.Timeout;
   private snapshotManager?: SnapshotManager;
+  public outputLevel: string = "error"; // error, log, warn, info
+  public consoleLevel: string = "error warn"; // error, log, warn, info
 
   // Create an output channel for logging
   private outputChannel: vscode.OutputChannel;
+
+  // Debug methods
+  private debug = {
+    log: (message: string, ...args: any[]) => {
+      if (this.consoleLevel.includes('log')) {
+          console.log(`[SourceTracker] ${message}`, ...args);
+      }
+      if (this.outputLevel.includes('log')) {
+          this.outputChannel.appendLine(`[LOG] ${message} ${args.length ? JSON.stringify(args) : ''}`);
+      }
+    },
+    warn: (message: string, ...args: any[]) => {
+      if (this.consoleLevel.includes('warn')) {
+          console.warn(`[SourceTracker] ${message}`, ...args);
+      }
+      if (this.outputLevel.includes('warn')) {
+          this.outputChannel.appendLine(`[WARN] ${message} ${args.length ? JSON.stringify(args) : ''}`);
+      }
+    },
+    error: (message: string, ...args: any[]) => {
+      if (this.consoleLevel.includes('error')) {
+          console.error(`[SourceTracker] ${message}`, ...args);
+      }
+      if (this.outputLevel.includes('error')) {
+          this.outputChannel.appendLine(`[ERROR] ${message} ${args.length ? JSON.stringify(args) : ''}`);
+      }
+    },
+    info: (message: string, ...args: any[]) => {
+      if (this.consoleLevel.includes('info')) {
+          console.info(`[SourceTracker] ${message}`, ...args);
+      }
+      if (this.outputLevel.includes('info')) {
+          this.outputChannel.appendLine(`[INFO] ${message} ${args.length ? JSON.stringify(args) : ''}`);
+      }
+    }
+  };
 
   constructor(private context: vscode.ExtensionContext) {
     // Initialize the channel
@@ -37,21 +82,22 @@ class VirtualGitDiff {
     // Load the persisted base ref from context, or default to empty string
     this.baseRef = this.context.workspaceState.get<string>('sourceTracker.trackingBaseRef', '');
 
-    // Load the persisted base ref from context, or default to empty string
     this.useTreeColor = this.context.workspaceState.get<boolean>('sourceTracker.useTreeColor', true);
+    this.outputLevel = this.context.globalState.get<string>('sourceTracker.outputLevel', 'error');
+    this.consoleLevel = this.context.globalState.get<string>('sourceTracker.consoleLevel', 'error warn');
 
-    // Let's log an initial message
-    console.log('[SourceTracker] Extension constructor called.');
-    console.log(`[SourceTracker] Loaded baseRef from storage: ${this.baseRef}`);
+    // Let’s log some initial info
+    this.debug.info('Extension constructor called.');
+    this.debug.log(`Loaded baseRef from storage: ${this.baseRef}`);
     // Initialize the context variable for when clauses
     vscode.commands.executeCommand('setContext', 'sourceTracker.trackingBaseRef', this.baseRef);
-    console.log(`[SourceTracker] Initialized context variable: sourceTracker.trackingBaseRef = ${this.baseRef}`);
+    this.debug.log(`Initialized context variable: sourceTracker.trackingBaseRef = ${this.baseRef}`);
     this.initDecorations();
 
     // Initialize snapshot manager when a workspace is available
     if (vscode.workspace.workspaceFolders?.length) {
-      this.snapshotManager = new SnapshotManager(vscode.workspace.workspaceFolders[0].uri.fsPath);
-      console.log(`[SourceTracker] Initialized snapshot manager for workspace: ${vscode.workspace.workspaceFolders[0].uri.fsPath}`);
+      this.snapshotManager = new SnapshotManager(vscode.workspace.workspaceFolders[0].uri.fsPath, this.debug);
+      this.debug.info(`Initialized snapshot manager for workspace: ${vscode.workspace.workspaceFolders[0].uri.fsPath}`);
     }
 
   }
@@ -70,6 +116,11 @@ class VirtualGitDiff {
       isWholeLine: true,
       gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-changed.svg')),
       gutterIconSize: 'contain',
+
+      borderStyle: 'solid',
+      borderWidth: '0 0 0 3px',
+      borderColor: new vscode.ThemeColor('editorGutter.modifiedBackground'),
+
       // overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.modifiedForeground'),
       overviewRulerColor: 'rgba(66, 133, 244, 0.25)', // Blue with 0.25 opacity
       overviewRulerLane: vscode.OverviewRulerLane.Left
@@ -79,6 +130,11 @@ class VirtualGitDiff {
       isWholeLine: true,
       gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-added.svg')),
       gutterIconSize: 'contain',
+
+      borderStyle: 'solid',
+      borderWidth: '0 0 0 3px',
+      borderColor: new vscode.ThemeColor('editorGutter.addedBackground'),
+
       // overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.addedForeground'),
       overviewRulerColor: 'rgba(82, 183, 136, 0.25)', // Green with 0.25 opacity
       overviewRulerLane: vscode.OverviewRulerLane.Left
@@ -88,6 +144,11 @@ class VirtualGitDiff {
       isWholeLine: true,
       gutterIconPath: vscode.Uri.file(this.context.asAbsolutePath('resources/git-gutter-created.svg')),
       gutterIconSize: 'contain',
+
+      borderStyle: 'solid',
+      borderWidth: '0 0 0 3px',
+      borderColor: new vscode.ThemeColor('editorGutter.addedBackground'),
+
       // overviewRulerColor: 'rgba(140, 212, 105, 0.1)'
       // overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.addedForeground'),
       // overviewRulerLane: vscode.OverviewRulerLane.Left
@@ -148,7 +209,7 @@ class VirtualGitDiff {
    * @returns The path to the git repository root, or undefined if not in a git repository
    */
   private getGitRepoRoot(filePath: string): string | undefined {
-    console.log(`[SourceTracker] getGitRepoRoot called with filePath: ${filePath}`);
+    this.debug.log(`getGitRepoRoot called with filePath: ${filePath}`);
 
     // First check if the current directory is a git repo
     const currentPath = path.resolve(filePath);
@@ -157,7 +218,7 @@ class VirtualGitDiff {
     // Check if the current directory itself has a .git folder
     const gitDir = path.join(currentDir, '.git');
     if (fs.existsSync(gitDir)) {
-      console.log(`[SourceTracker] Found .git at current directory: ${gitDir}`);
+      this.debug.log(`Found .git at current directory: ${gitDir}`);
       return currentDir;
     }
 
@@ -168,7 +229,7 @@ class VirtualGitDiff {
     while (parentDir !== root) {
       const parentGitDir = path.join(parentDir, '.git');
       if (fs.existsSync(parentGitDir)) {
-        console.log(`[SourceTracker] Found .git at: ${parentGitDir}`);
+        this.debug.log(`Found .git at: ${parentGitDir}`);
         return parentDir;
       }
       const newParent = path.dirname(parentDir);
@@ -181,32 +242,36 @@ class VirtualGitDiff {
 
     // Check the root directory as well
     if (fs.existsSync(path.join(root, '.git'))) {
-      console.log(`[SourceTracker] Found .git at root: ${root}`);
+      this.debug.log(`Found .git at root: ${root}`);
       return root;
     }
 
-    console.log('[SourceTracker] Did not find Git repo root.');
+    this.debug.warn('Did not find Git repo root.');
     return undefined;
   }
 
   public activate() {
-    console.log('[SourceTracker] Activating extension...');
+    this.debug.info('Activating extension...');
 
     this.context.subscriptions.push(
+      vscode.commands.registerCommand('sourceTracker.debugOptions', (...args) => {
+        this.debug.log('>>> sourceTracker.debugOptions', args);
+        this.selectDebugLevel();
+      }),
       vscode.commands.registerCommand('sourceTracker.gitTrackingOptions', (...args) => {
-        console.log('>>> sourceTracker.gitTrackingOptions', args);
+        this.debug.log('>>> sourceTracker.gitTrackingOptions', args);
         this.selectBaseRef();
       }),
       vscode.commands.registerCommand('sourceTracker.diffTrackedFile', (...args) => {
-        console.log('>>> sourceTracker.diffTrackedFile', args);
+        this.debug.log('>>> sourceTracker.diffTrackedFile', args);
         this.diffTrackedFile();
       }),
       vscode.commands.registerCommand('sourceTracker.diffFileSnapshot', (...args) => {
-        console.log('>>> sourceTracker.diffFileSnapshot', args);
-        this.diffTrackedFile(); // diffTrackedFile should show a diff agaisnt active snapshot if any, so no need for a separate function
+        this.debug.log('>>> sourceTracker.diffFileSnapshot', args);
+        this.diffTrackedFile(); // same logic
       }),
       vscode.commands.registerCommand('sourceTracker.snapshotTrackingOptions', (...args) => {
-        console.log('>>> sourceTracker.snapshotTrackingOptions', ...args);
+        this.debug.log('>>> sourceTracker.snapshotTrackingOptions', ...args);
         this.selectSnapshotTrackingOptions(args[0]);
       }),
       vscode.commands.registerCommand('sourceTracker.openChangedFiles', (force) => this.openChangedFiles(force)),
@@ -240,6 +305,82 @@ class VirtualGitDiff {
     setTimeout(() => {
       this.updateActiveEditorContext();
     }, 1000);
+  }
+
+  private async selectDebugLevel() {
+    this.debug.log('selectDebugLevel called.');
+
+    const debugLevels = ['error', 'warn', 'log', 'info'];
+
+    // Create items for the quick pick with checkbox behavior
+    const consoleItems = debugLevels.map(level => ({
+      label: `$(terminal) Console: ${level}`,
+      detail: `Show ${level} messages in the console`,
+      picked: this.consoleLevel.includes(level),
+      level
+    }));
+
+    const outputItems = debugLevels.map(level => ({
+      label: `$(output) Output Channel: ${level}`,
+      detail: `Show ${level} messages in the output channel`,
+      picked: this.outputLevel.includes(level),
+      level
+    }));
+
+    // Combine all items with a separator
+    const quickPickItems = [
+      ...consoleItems,
+      { label: '', kind: vscode.QuickPickItemKind.Separator },
+      ...outputItems
+    ];
+
+    const quickPick = vscode.window.createQuickPick();
+    quickPick.title = 'Select Debug Levels';
+    quickPick.placeholder = 'Choose which debug levels to enable';
+    quickPick.canSelectMany = true;
+    quickPick.items = quickPickItems;
+
+    // Set initially selected items based on current levels
+    quickPick.selectedItems = quickPickItems.filter(
+      item => 'level' in item && (
+        (item.label.startsWith('$(terminal)') && this.consoleLevel.includes(item.level)) ||
+        (item.label.startsWith('$(output)') && this.outputLevel.includes(item.level))
+      )
+    );
+
+    return new Promise<void>(resolve => {
+      quickPick.onDidAccept(async () => {
+        // Process selected items
+        const selectedConsole = quickPick.selectedItems
+          .filter(item => 'level' in item && item.label.startsWith('$(terminal)'))
+          .map(item => (item as any).level);
+
+        const selectedOutput = quickPick.selectedItems
+          .filter(item => 'level' in item && item.label.startsWith('$(output)'))
+          .map(item => (item as any).level);
+
+        // Update debug levels
+        this.consoleLevel = selectedConsole.join(' ');
+        this.outputLevel = selectedOutput.join(' ');
+
+        // Save settings
+        await this.context.globalState.update('sourceTracker.outputLevel', this.outputLevel);
+        await this.context.globalState.update('sourceTracker.consoleLevel', this.consoleLevel);
+
+        this.debug.info(`Updated debug levels - Console: ${this.consoleLevel}, Output: ${this.outputLevel}`);
+        vscode.window.showInformationMessage(`Debug levels updated`);
+
+        quickPick.hide();
+        resolve();
+      });
+
+      quickPick.onDidHide(() => {
+        quickPick.dispose();
+        resolve();
+      });
+
+      quickPick.show();
+    });
   }
 
   /**
@@ -280,19 +421,19 @@ class VirtualGitDiff {
   }
 
   private async selectSnapshotTrackingOptions(serializedUri: any) {
-    console.log('[SourceTracker] selectSnapshotTrackingOptions called.');
+    this.debug.log('selectSnapshotTrackingOptions called.');
     let documentUri: vscode.Uri | undefined;
 
     // Use the external property if available (this contains the fully qualified URI)
     if (serializedUri && typeof serializedUri === 'object' && 'external' in serializedUri) {
       documentUri = vscode.Uri.parse(serializedUri.external);
-      console.log('[SourceTracker] Using provided URI:', documentUri.toString());
+      this.debug.log('Using provided URI:', documentUri.toString());
     } else {
       // Fall back to the active editor if no URI was provided
       const editor = vscode.window.activeTextEditor;
       if (editor) {
         documentUri = editor.document.uri;
-        console.log('[SourceTracker] Falling back to active editor URI:', documentUri.toString());
+        this.debug.log('Falling back to active editor URI:', documentUri.toString());
       } else {
         vscode.window.showInformationMessage('No document available to manage snapshots.');
         return;
@@ -306,7 +447,7 @@ class VirtualGitDiff {
     }
 
     const filePath = editor.document.uri.fsPath;
-    console.log(`[SourceTracker] Managing snapshots for file: ${filePath}`);
+    this.debug.log(`Managing snapshots for file: ${filePath}`);
 
     // Get snapshots for this file
     const snapshots = this.snapshotManager?.getSnapshots(filePath) || [];
@@ -317,7 +458,9 @@ class VirtualGitDiff {
       // Check if this is the active snapshot
       const isActive = activeSnapshot && snapshot.id === activeSnapshot.id;
       return {
-        label: isActive ? `$(triangle-right) ${this.getRelativeTimeString(snapshot.timestamp)}` : (activeSnapshot ? `$(blank) ${this.getRelativeTimeString(snapshot.timestamp)}` : `${this.getRelativeTimeString(snapshot.timestamp)}`),
+        label: isActive
+          ? `$(triangle-right) ${this.getRelativeTimeString(snapshot.timestamp)}`
+          : (activeSnapshot ? `$(blank) ${this.getRelativeTimeString(snapshot.timestamp)}` : `${this.getRelativeTimeString(snapshot.timestamp)}`),
         description: snapshot.message || 'No description',
         id: snapshot.id
       };
@@ -378,7 +521,7 @@ class VirtualGitDiff {
     });
 
     quickPick.onDidAccept(() => {
-      console.log('onDidAccept', quickPick.value, quickPick.items, quickPick.selectedItems)
+      this.debug.log('onDidAccept', quickPick.value, quickPick.items, quickPick.selectedItems);
       const selectedItem = quickPick.selectedItems[0];
       if (selectedItem) {
         if (selectedItem.label === 'Restore From Snapshot') {
@@ -392,7 +535,7 @@ class VirtualGitDiff {
         } else if (selectedItem.description === 'Take new snapshot' || selectedItem.label === 'Take Snapshot') {
           // Only take snapshot if there's a message
           if (quickPick.value.trim()) {
-            console.log('SNAPSHOT >>> ', quickPick.value)
+            this.debug.log('SNAPSHOT >>> ', quickPick.value);
             this.takeNewSnapshot(filePath, quickPick.value);
           } else {
             // Prompt for a snapshot message
@@ -404,21 +547,21 @@ class VirtualGitDiff {
               if (message) {
                 this.takeNewSnapshot(filePath, message);
               } else {
-                  vscode.window.showWarningMessage('Snapshot creation cancelled: No name provided.');
+                vscode.window.showWarningMessage('Snapshot creation cancelled: No name provided.');
               }
             });
           }
         } else {
           // A specific snapshot was selected - activate it
           if ('id' in selectedItem && this.snapshotManager) {
-            this.snapshotManager.setActiveSnapshot(filePath, 'id' in selectedItem ? selectedItem.id?.toString() : undefined);
+            this.snapshotManager.setActiveSnapshot(filePath, selectedItem.id?.toString());
             vscode.window.showInformationMessage(`Activated snapshot: ${selectedItem.description}`);
             this.updateActiveEditorContext();
             this.updateDecorations();
           }
         }
       } else if (quickPick.value.trim()) {
-        console.log('SNAPSHOT >>> ', quickPick.value)
+        this.debug.log('SNAPSHOT >>> ', quickPick.value);
         // No item selected but there's input text - treat as new snapshot
         this.takeNewSnapshot(filePath, quickPick.value);
       }
@@ -429,7 +572,7 @@ class VirtualGitDiff {
   }
 
   private async restoreFromSnapshot(filePath: string) {
-    console.log(`[SourceTracker] restoreFromSnapshot called for file: ${filePath}`);
+    this.debug.info(`restoreFromSnapshot called for file: ${filePath}`);
     if (!this.snapshotManager) {
       vscode.window.showErrorMessage('Snapshot manager is not initialized');
       return;
@@ -456,7 +599,7 @@ class VirtualGitDiff {
       );
 
       if (confirmed !== 'Yes') {
-        console.log(`[SourceTracker] User cancelled restore from snapshot`);
+        this.debug.info(`User cancelled restore from snapshot`);
         return;
       }
 
@@ -474,12 +617,12 @@ class VirtualGitDiff {
 
       await vscode.workspace.applyEdit(edit);
       vscode.window.showInformationMessage(`Restored from snapshot: ${new Date(activeSnapshot.timestamp).toLocaleString()}`);
-      console.log(`[SourceTracker] Restored file from snapshot: ${filePath}`);
+      this.debug.info(`Restored file from snapshot: ${filePath}`);
 
       // Update context after restoring from snapshot
       this.updateActiveEditorContext(editor);
     } catch (error) {
-      console.error(`[SourceTracker] Error restoring from snapshot: ${error}`);
+      this.debug.error(`Error restoring from snapshot: ${error}`);
       vscode.window.showErrorMessage(`Failed to restore from snapshot: ${error}`);
     }
   }
@@ -509,7 +652,7 @@ class VirtualGitDiff {
         activeSnapshot !== undefined
       );
 
-      console.log(`[SourceTracker] Active editor has snapshot: ${activeSnapshot !== undefined}`);
+      this.debug.log(`Active editor has snapshot: ${activeSnapshot !== undefined}`);
     } else {
       // Clear context when no editor is active
       vscode.commands.executeCommand('setContext', 'sourceTracker.hasActiveSnapshot', false);
@@ -532,7 +675,7 @@ class VirtualGitDiff {
         );
 
         if (confirmed !== 'Yes, Delete All') {
-          console.log(`[SourceTracker] User cancelled deletion of all snapshots for ${filePath}`);
+          this.debug.info(`User cancelled deletion of all snapshots for ${filePath}`);
           return;
         }
         this.snapshotManager.clearSnapshots(filePath);
@@ -545,7 +688,7 @@ class VirtualGitDiff {
         }
       }
       vscode.window.showInformationMessage(`Snapshots cleared for ${path.basename(filePath)}`);
-      console.log(`[SourceTracker] Cleared snapshots for file: ${filePath}`);
+      this.debug.info(`Cleared snapshots for file: ${filePath}`);
 
       // Update decorations to reflect changes
       this.updateDecorations();
@@ -553,7 +696,7 @@ class VirtualGitDiff {
       // Update context after clearing snapshots
       this.updateActiveEditorContext();
     } catch (error) {
-      console.error(`[SourceTracker] Error clearing snapshots: ${error}`);
+      this.debug.error(`Error clearing snapshots: ${error}`);
       vscode.window.showErrorMessage(`Failed to clear snapshots: ${error}`);
     }
   }
@@ -567,7 +710,7 @@ class VirtualGitDiff {
     try {
       this.snapshotManager.setActiveSnapshot(filePath, undefined);
       vscode.window.showInformationMessage(`Snapshot tracking deactivated for ${path.basename(filePath)}`);
-      console.log(`[SourceTracker] Deactivated snapshot tracking for file: ${filePath}`);
+      this.debug.info(`Deactivated snapshot tracking for file: ${filePath}`);
 
       // Update decorations to reflect changes
       this.updateDecorations();
@@ -575,13 +718,13 @@ class VirtualGitDiff {
       // Update context after deactivating snapshot
       this.updateActiveEditorContext();
     } catch (error) {
-      console.error(`[SourceTracker] Error deactivating snapshot: ${error}`);
+      this.debug.error(`Error deactivating snapshot: ${error}`);
       vscode.window.showErrorMessage(`Failed to deactivate snapshot: ${error}`);
     }
   }
 
   private takeNewSnapshot(filePath: string, message: string) {
-    console.log(`[SourceTracker] takeNewSnapshot called with filePath: ${filePath}, message: ${message}`);
+    this.debug.log(`takeNewSnapshot called with filePath: ${filePath}, message: ${message}`);
     if (!this.snapshotManager) {
       vscode.window.showErrorMessage('Snapshot manager is not initialized');
       return;
@@ -604,7 +747,7 @@ class VirtualGitDiff {
       this.snapshotManager.setActiveSnapshot(filePath, snapshotId);
 
       vscode.window.showInformationMessage(`Snapshot created for ${path.basename(filePath)}`);
-      console.log(`[SourceTracker] Created new snapshot for file: ${filePath} with message: ${message}`);
+      this.debug.info(`Created new snapshot for file: ${filePath} with message: ${message}`);
 
       // Update decorations to reflect changes
       this.updateDecorations();
@@ -612,7 +755,7 @@ class VirtualGitDiff {
       // Update context after taking new snapshot
       this.updateActiveEditorContext(editor);
     } catch (error) {
-      console.error(`[SourceTracker] Error taking snapshot: ${error}`);
+      this.debug.error(`Error taking snapshot: ${error}`);
       vscode.window.showErrorMessage(`Failed to take snapshot: ${error}`);
     }
   }
@@ -621,9 +764,9 @@ class VirtualGitDiff {
     // Check if editor has an active snapshot and set context
     this.updateActiveEditorContext(editor);
 
-    console.log('[SourceTracker] Active editor changed.');
+    this.debug.log('Active editor changed.');
     if (editor) {
-      console.log(`[SourceTracker] New active file: ${editor.document.uri.fsPath}`);
+      this.debug.log(`New active file: ${editor.document.uri.fsPath}`);
       // Update decorations whenever the active editor changes
       // Attempt an initial decoration update
       if (this.diffTimeout) {
@@ -664,7 +807,7 @@ class VirtualGitDiff {
 
   private async resolveRefAsync(inputRef: string, cwd: string): Promise<string | null> {
     const ref = inputRef.trim();
-    console.log(`[SourceTracker] Resolving base ref: "${ref}" in ${cwd}`);
+    this.debug.log(`Resolving base ref: "${ref}" in ${cwd}`);
 
     if (ref.toUpperCase() === 'HEAD') {
       return 'HEAD';
@@ -676,7 +819,7 @@ class VirtualGitDiff {
         const currentBranch = await this.runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
 
         if (currentBranch.stdout === 'HEAD') {
-          console.log(`[SourceTracker] Detached HEAD state - using HEAD~1`);
+          this.debug.warn(`Detached HEAD state - using HEAD~1`);
           return 'HEAD~1';
         }
 
@@ -687,7 +830,7 @@ class VirtualGitDiff {
         );
 
         if (upstream.stdout.trim()) {
-          console.log(`[SourceTracker] Found upstream branch: ${upstream.stdout.trim()}`);
+          this.debug.log(`Found upstream branch: ${upstream.stdout.trim()}`);
           // Find the merge-base (common ancestor) between the current branch and the upstream
           const mergeBase = await this.runGitCommand(
             ['merge-base', 'HEAD', upstream.stdout.trim()],
@@ -695,7 +838,7 @@ class VirtualGitDiff {
           );
 
           if (mergeBase.status === 0 && mergeBase.stdout.trim()) {
-            console.log(`[SourceTracker] Using merge-base with upstream: ${mergeBase.stdout.trim()}`);
+            this.debug.log(`Using merge-base with upstream: ${mergeBase.stdout.trim()}`);
             return mergeBase.stdout.trim();
           }
 
@@ -706,7 +849,7 @@ class VirtualGitDiff {
         for (const baseBranch of ['origin/main', 'origin/master', 'main', 'master']) {
           const branchExists = await this.runGitCommand(['rev-parse', '--verify', baseBranch], cwd);
           if (branchExists.status === 0) {
-            console.log(`[SourceTracker] Using ${baseBranch} as base`);
+            this.debug.log(`Using ${baseBranch} as base`);
             // Find the merge-base (common ancestor) between the current branch and the base branch
             const mergeBase = await this.runGitCommand(
               ['merge-base', 'HEAD', baseBranch],
@@ -714,7 +857,7 @@ class VirtualGitDiff {
             );
 
             if (mergeBase.status === 0 && mergeBase.stdout.trim()) {
-              console.log(`[SourceTracker] Using merge-base with ${baseBranch}: ${mergeBase.stdout.trim()}`);
+              this.debug.log(`Using merge-base with ${baseBranch}: ${mergeBase.stdout.trim()}`);
               return mergeBase.stdout.trim();
             }
 
@@ -723,7 +866,7 @@ class VirtualGitDiff {
         }
 
         // If we can't find any good base, just use parent commit
-        console.log(`[SourceTracker] No suitable base branch found - using HEAD~1`);
+        this.debug.warn(`No suitable base branch found - using HEAD~1`);
         const parentCheck = await this.runGitCommand(['rev-parse', '--verify', 'HEAD~1'], cwd);
         if (parentCheck.status === 0) {
           return 'HEAD~1';
@@ -733,7 +876,7 @@ class VirtualGitDiff {
         return 'HEAD';
 
       } catch (error) {
-        console.error(`[SourceTracker] Error resolving branch ref:`, error);
+        this.debug.error(`Error resolving branch ref:`, error);
         return 'HEAD';
       }
     }
@@ -743,7 +886,7 @@ class VirtualGitDiff {
       for (const candidate of candidates) {
         const result = await this.resolveRefAsync(candidate.trim(), cwd);
         if (result) {
-          console.log(`[SourceTracker] Found matching ref: ${result} from input: ${candidate}`);
+          this.debug.log(`Found matching ref: ${result} from input: ${candidate}`);
           return result;
         }
       }
@@ -754,7 +897,7 @@ class VirtualGitDiff {
       const revParseResult = await this.runGitCommand(['rev-parse', ref], cwd);
       return revParseResult.status === 0 ? revParseResult.stdout.trim() : null;
     } catch (error) {
-      console.error(`[SourceTracker] Error resolving ref ${ref}:`, error);
+      this.debug.error(`Error resolving ref ${ref}:`, error);
       return null;
     }
   }
@@ -781,6 +924,7 @@ class VirtualGitDiff {
         const gitRoot = this.getGitRepoRoot(folderPath);
 
         if (!gitRoot) {
+          this.debug.warn(`No Git root found for folder: ${folderPath}`);
           continue;
         }
 
@@ -816,7 +960,7 @@ class VirtualGitDiff {
 
       return changedFilesCount;
     } catch (error) {
-      console.error(`[SourceTracker] Error getting changed files count: ${error}`);
+      this.debug.error(`Error getting changed files count: ${error}`);
       return 0;
     }
   }
@@ -835,6 +979,7 @@ class VirtualGitDiff {
         const gitRoot = this.getGitRepoRoot(folderPath);
 
         if (!gitRoot) {
+          this.debug.warn(`No Git root found for folder: ${folderPath}`);
           continue;
         }
 
@@ -864,13 +1009,13 @@ class VirtualGitDiff {
 
       return changedFilesCount;
     } catch (error) {
-      console.error(`[SourceTracker] Error getting changed files count since last commit: ${error}`);
+      this.debug.error(`Error getting changed files count since last commit: ${error}`);
       return 0;
     }
   }
 
   private async selectBaseRef() {
-    console.log('[SourceTracker] selectBaseRef called.');
+    this.debug.log('selectBaseRef called.');
 
     // Get changed files count if base ref is set
     let trackedFilesCount = 0;
@@ -879,12 +1024,10 @@ class VirtualGitDiff {
       trackedFilesCount = trackedFiles;
     }
 
-    // Get changed files count if base ref is set
+    // Get changed files count since last commit (independent of baseRef)
     let changedFilesCount = 0;
     const changedFiles = await this.getChangedFilesCount();
     changedFilesCount = changedFiles;
-
-
 
     // Get the last 3 commit hashes with their messages
     let recentCommits: vscode.QuickPickItem[] = [];
@@ -896,7 +1039,7 @@ class VirtualGitDiff {
 
       if (gitRoot) {
         try {
-          // Get the last 3 commits with hash and first line of message
+          // Get the last 6 commits with hash and first line of message
           const commitsResult = await this.runGitCommand(
             ['log', '-n', '6', '--pretty=format:"%h %cr - %s"'],
             gitRoot
@@ -915,7 +1058,7 @@ class VirtualGitDiff {
             });
           }
         } catch (error) {
-          console.error(`[SourceTracker] Error getting recent commits: ${error}`);
+          this.debug.error(`Error getting recent commits: ${error}`);
         }
       }
     }
@@ -949,6 +1092,7 @@ class VirtualGitDiff {
     quickPick.items = commonOptions;
     quickPick.title = 'SourceTracker: Select Git Tracking Base';
     quickPick.canSelectMany = false;
+    quickPick.ignoreFocusOut = false;
 
     // Set the current base ref as the active item if it exists
     if (this.baseRef) {
@@ -959,9 +1103,6 @@ class VirtualGitDiff {
     } else {
       quickPick.activeItems = [commonOptions[0]];
     }
-
-    // Make it accept custom input
-    quickPick.ignoreFocusOut = false;
 
     let input: string | undefined;
 
@@ -1003,7 +1144,7 @@ class VirtualGitDiff {
     input = await promise;
 
     if (input === undefined) {
-      console.log('[SourceTracker] User canceled base ref input.');
+      this.debug.info('User canceled base ref input.');
       return;
     }
 
@@ -1026,15 +1167,15 @@ class VirtualGitDiff {
 
     // Persist the base ref to context
     await this.context.workspaceState.update('sourceTracker.trackingBaseRef', this.baseRef);
-    console.log(`[SourceTracker] Persisted baseRef to storage: ${this.baseRef}`);
+    this.debug.info(`Persisted baseRef to storage: ${this.baseRef}`);
 
     // Update the VS Code context for when clauses
     await vscode.commands.executeCommand('setContext', 'sourceTracker.trackingBaseRef', this.baseRef);
-    console.log(`[SourceTracker] Updated context variable for when clauses: sourceTracker.trackingBaseRef = ${this.baseRef}`);
+    this.debug.log(`Updated context variable for when clauses: sourceTracker.trackingBaseRef = ${this.baseRef}`);
 
     if (!this.baseRef) {
       vscode.window.showInformationMessage('Virtual Git Diff disabled.');
-      console.log('[SourceTracker] Base ref cleared. Virtual Git Diff disabled.');
+      this.debug.info('Base ref cleared. Virtual Git Diff disabled.');
       this.clearDecorations();
       // Clear file explorer decorations
       (this.addedFileDecoration as any).setFiles([]);
@@ -1046,46 +1187,46 @@ class VirtualGitDiff {
       }
     } else {
       vscode.window.showInformationMessage(`Base ref set to: ${this.baseRef}`);
-      console.log(`[SourceTracker] Base ref set to raw input: ${this.baseRef}`);
+      this.debug.info(`Base ref set to raw input: ${this.baseRef}`);
       this.updateDecorations();
       this.scheduleFileExplorerUpdate();
     }
   }
 
   private async updateDecorations() {
-    console.log('[SourceTracker] updateDecorations called.');
-    console.log(`[SourceTracker] Current baseRef: ${this.baseRef}`);
+    this.debug.log('updateDecorations called.');
+    this.debug.log(`Current baseRef: ${this.baseRef}`);
 
     for (const editor of vscode.window.visibleTextEditors) {
       // Skip non-file editors (output, terminal, etc.)
       if (editor.document.uri.scheme !== 'file') {
-        console.log(`[SourceTracker] Skipping non-file editor: ${editor.document.uri}`);
+        this.debug.log(`Skipping non-file editor: ${editor.document.uri}`);
         continue;
       }
       const file = editor.document.uri.fsPath;
-      console.log(`[SourceTracker] Checking for active snapshot for file: ${file}`);
+      this.debug.log(`Checking for active snapshot for file: ${file}`);
       if (this.snapshotManager && this.snapshotManager.getActiveSnapshot(file)) {
-        console.log('[SourceTracker] Active snapshot found, skipping baseRef check.');
+        this.debug.log('Active snapshot found, skipping baseRef check.');
         const diffs = await this.computeDiffForFileAsync(file);
-        console.log(`[SourceTracker] Computed diffs for active snapshot.`);
+        this.debug.log(`Computed diffs for active snapshot.`);
         this.applyDecorations(editor, diffs);
         continue;
       }
       if (!this.baseRef) {
-        console.log('[SourceTracker] baseRef is empty, clearing decorations.');
+        this.debug.log('baseRef is empty, clearing decorations.');
         this.clearDecorations();
         return;
       }
 
-      console.log(`[SourceTracker] Computing diff for file: ${file}`);
+      this.debug.log(`Computing diff for file: ${file}`);
       const diffs = await this.computeDiffForFileAsync(file);
-      console.log(`[SourceTracker] Computed diffs.`);
+      this.debug.log(`Computed diffs.`);
       this.applyDecorations(editor, diffs);
     }
   }
 
   private clearDecorations() {
-    console.log('[SourceTracker] clearDecorations called. Removing all decorations from visible editors.');
+    this.debug.log('clearDecorations called. Removing all decorations from visible editors.');
 
     for (const editor of vscode.window.visibleTextEditors) {
       editor.setDecorations(this.changedLineDecoration, []);
@@ -1097,7 +1238,6 @@ class VirtualGitDiff {
     (this.addedFileDecoration as any).setFiles([]);
     (this.modifiedFileDecoration as any).setFiles([]);
   }
-
 
   // Debounced timeout for file explorer decorations
   private fileExplorerTimeout?: NodeJS.Timeout;
@@ -1117,16 +1257,15 @@ class VirtualGitDiff {
     return vscode.workspace.workspaceFolders?.[0];
   }
 
-
   /**
    * Opens all files that have been modified or added since the last commit
    */
   private async openChangedFiles(force = false) {
-    console.log('[SourceTracker] openChangedFiles called.');
+    this.debug.log('openChangedFiles called.');
 
     // Get the active workspace folder
     const activeWorkspaceFolder = this.getActiveWorkspaceFolder();
-    console.log(`[SourceTracker] Active workspace folder: ${activeWorkspaceFolder?.uri.fsPath || 'none'}`);
+    this.debug.log(`Active workspace folder: ${activeWorkspaceFolder?.uri.fsPath || 'none'}`);
 
     // Get the workspace folders
     if (!vscode.workspace.workspaceFolders?.length) {
@@ -1135,7 +1274,7 @@ class VirtualGitDiff {
     }
 
     try {
-      // Get all modified and added files in all workspace folders
+      // Get all modified and added files in relevant workspace folders
       const changedFiles: string[] = [];
 
       // Default behavior: only open files in the active workspace folder
@@ -1148,11 +1287,11 @@ class VirtualGitDiff {
         const gitRoot = this.getGitRepoRoot(folderPath);
 
         if (!gitRoot) {
-          console.log(`[SourceTracker] No Git root found for workspace folder: ${folderPath}`);
+          this.debug.warn(`No Git root found for workspace folder: ${folderPath}`);
           continue;
         }
 
-        console.log(`[SourceTracker] Getting changed files since HEAD in ${gitRoot}`);
+        this.debug.log(`Getting changed files since HEAD in ${gitRoot}`);
 
         // Get changed files compared to HEAD
         const result = await this.runGitCommand(
@@ -1161,7 +1300,7 @@ class VirtualGitDiff {
         );
 
         if (result.status !== 0 && result.status !== 1) {
-          console.log(`[SourceTracker] Error getting changed files: ${result.stderr}`);
+          this.debug.warn(`Error getting changed files: ${result.stderr}`);
           continue;
         }
 
@@ -1193,7 +1332,7 @@ class VirtualGitDiff {
         return;
       }
 
-      console.log(`[SourceTracker] Opening ${changedFiles.length} changed files`);
+      this.debug.info(`Opening ${changedFiles.length} changed files`);
 
       // Confirm with user before opening many files
       if (changedFiles.length > 10 && force !== true) {
@@ -1212,19 +1351,19 @@ class VirtualGitDiff {
           const document = await vscode.workspace.openTextDocument(file);
           await vscode.window.showTextDocument(document, { preview: false });
         } catch (error) {
-          console.error(`[SourceTracker] Error opening file ${file}: ${error}`);
+          this.debug.error(`Error opening file ${file}: ${error}`);
         }
       }
 
       vscode.window.showInformationMessage(`Opened ${changedFiles.length} changed files.`);
     } catch (error) {
-      console.error(`[SourceTracker] Error opening changed files: ${error}`);
+      this.debug.error(`Error opening changed files: ${error}`);
       vscode.window.showErrorMessage(`Error opening changed files: ${error}`);
     }
   }
 
   private async diffTrackedFile() {
-    console.log('[SourceTracker] diffTrackedFile called.');
+    this.debug.log('diffTrackedFile called.');
 
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
@@ -1238,7 +1377,7 @@ class VirtualGitDiff {
     if (this.snapshotManager) {
       const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
       if (activeSnapshot) {
-        console.log(`[SourceTracker] Using active snapshot for diff: ${activeSnapshot.id}`);
+        this.debug.log(`Using active snapshot for diff: ${activeSnapshot.id}`);
         // Create a title for the diff view
         const title = `${path.basename(filePath)} (Snapshot: ${new Date(activeSnapshot.timestamp).toLocaleString()})`;
 
@@ -1280,7 +1419,7 @@ class VirtualGitDiff {
         await vscode.commands.executeCommand('git.openChange');
         return;
       } catch (error) {
-        console.error(`[SourceTracker] Error using git.openChange: ${error}`);
+        this.debug.error(`Error using git.openChange: ${error}`);
         vscode.window.showInformationMessage('No base ref set. Please set a base ref first.');
         return;
       }
@@ -1294,7 +1433,7 @@ class VirtualGitDiff {
         await vscode.commands.executeCommand('git.openChange');
         return;
       } catch (error) {
-        console.error(`[SourceTracker] Error using git.openChange: ${error}`);
+        this.debug.error(`Error using git.openChange: ${error}`);
         vscode.window.showInformationMessage('File is not in a Git repository.');
         return;
       }
@@ -1302,7 +1441,7 @@ class VirtualGitDiff {
 
     try {
       const relativePath = path.relative(gitRoot, filePath);
-      console.log(`[SourceTracker] Git root: ${gitRoot}, Relative path: ${relativePath}`);
+      this.debug.log(`Git root: ${gitRoot}, Relative path: ${relativePath}`);
 
       // Dynamically resolve base ref for this file
       const resolvedRef = await this.resolveRefAsync(this.baseRef, gitRoot);
@@ -1312,7 +1451,7 @@ class VirtualGitDiff {
           await vscode.commands.executeCommand('git.openChange');
           return;
         } catch (error) {
-          console.error(`[SourceTracker] Error using git.openChange: ${error}`);
+          this.debug.error(`Error using git.openChange: ${error}`);
           vscode.window.showErrorMessage('Could not resolve base reference.');
         }
         return;
@@ -1328,7 +1467,7 @@ class VirtualGitDiff {
           await vscode.commands.executeCommand('git.openChange');
           return;
         } catch (error) {
-          console.error(`[SourceTracker] Error using git.openChange: ${error}`);
+          this.debug.error(`Error using git.openChange: ${error}`);
           vscode.window.showInformationMessage('File does not exist in the base reference.');
         }
         return;
@@ -1365,27 +1504,27 @@ class VirtualGitDiff {
       }, 30000); // 30 seconds
 
     } catch (error) {
-      console.error(`[SourceTracker] Error creating diff view: ${error}`);
+      this.debug.error(`Error creating diff view: ${error}`);
 
       // Try built-in Git command as final fallback
       try {
         await vscode.commands.executeCommand('git.openChange');
       } catch (secondError) {
-        console.error(`[SourceTracker] Error using git.openChange fallback: ${secondError}`);
+        this.debug.error(`Error using git.openChange fallback: ${secondError}`);
         vscode.window.showErrorMessage(`Error creating diff view: ${error}`);
       }
     }
   }
 
   /**
-  * Opens all files that have been modified or added since the base ref
-  */
+   * Opens all files that have been modified or added since the base ref
+   */
   private async openTrackedFiles(force = false) {
-    console.log('[SourceTracker] openTrackedFiles called.');
+    this.debug.log('openTrackedFiles called.');
 
     // Get the active workspace folder
     const activeWorkspaceFolder = this.getActiveWorkspaceFolder();
-    console.log(`[SourceTracker] Active workspace folder: ${activeWorkspaceFolder?.uri.fsPath || 'none'}`);
+    this.debug.log(`Active workspace folder: ${activeWorkspaceFolder?.uri.fsPath || 'none'}`);
 
     if (!this.baseRef) {
       vscode.window.showInformationMessage('No base ref set. Please set a base ref first.');
@@ -1412,18 +1551,18 @@ class VirtualGitDiff {
         const gitRoot = this.getGitRepoRoot(folderPath);
 
         if (!gitRoot) {
-          console.log(`[SourceTracker] No Git root found for workspace folder: ${folderPath}`);
+          this.debug.warn(`No Git root found for folder: ${folderPath}`);
           continue;
         }
 
         // Resolve the base ref
         const resolvedRef = await this.resolveRefAsync(this.baseRef, gitRoot);
         if (!resolvedRef) {
-          console.log('[SourceTracker] Could not resolve base ref dynamically.');
+          this.debug.warn('Could not resolve base ref dynamically.');
           continue;
         }
 
-        console.log(`[SourceTracker] Getting changed files against ref: ${resolvedRef} in ${gitRoot}`);
+        this.debug.log(`Getting changed files against ref: ${resolvedRef} in ${gitRoot}`);
 
         // Get changed files compared to base ref
         const result = await this.runGitCommand(
@@ -1432,7 +1571,7 @@ class VirtualGitDiff {
         );
 
         if (result.status !== 0 && result.status !== 1) {
-          console.log(`[SourceTracker] Error getting changed files: ${result.stderr}`);
+          this.debug.warn(`Error getting changed files: ${result.stderr}`);
           continue;
         }
 
@@ -1464,7 +1603,7 @@ class VirtualGitDiff {
         return;
       }
 
-      console.log(`[SourceTracker] Opening ${changedFiles.length} changed files`);
+      this.debug.info(`Opening ${changedFiles.length} changed files`);
 
       // Confirm with user before opening many files
       if (changedFiles.length > 10 && force !== true) {
@@ -1483,13 +1622,13 @@ class VirtualGitDiff {
           const document = await vscode.workspace.openTextDocument(file);
           await vscode.window.showTextDocument(document, { preview: false });
         } catch (error) {
-          console.error(`[SourceTracker] Error opening file ${file}: ${error}`);
+          this.debug.error(`Error opening file ${file}: ${error}`);
         }
       }
 
       vscode.window.showInformationMessage(`Opened ${changedFiles.length} changed files.`);
     } catch (error) {
-      console.error(`[SourceTracker] Error opening changed files: ${error}`);
+      this.debug.error(`Error opening changed files: ${error}`);
       vscode.window.showErrorMessage(`Error opening changed files: ${error}`);
     }
   }
@@ -1498,7 +1637,7 @@ class VirtualGitDiff {
   * Schedules an update of file explorer decorations with debouncing
   */
   private scheduleFileExplorerUpdate(immediate = false) {
-    console.log('[SourceTracker] Scheduling file explorer decoration update');
+    this.debug.log('Scheduling file explorer decoration update');
     if (this.fileExplorerTimeout) {
       clearTimeout(this.fileExplorerTimeout);
     }
@@ -1511,10 +1650,10 @@ class VirtualGitDiff {
   * since the base ref.
   */
   private async updateFileExplorerDecorations() {
-    console.log('[SourceTracker] updateFileExplorerDecorations called.');
+    this.debug.log('updateFileExplorerDecorations called.');
 
     if (!this.baseRef) {
-      console.log('[SourceTracker] No baseRef set, clearing file decorations');
+      this.debug.log('No baseRef set, clearing file decorations');
       // Clear file explorer decorations
       (this.addedFileDecoration as any).setFiles([]);
       (this.modifiedFileDecoration as any).setFiles([]);
@@ -1523,7 +1662,7 @@ class VirtualGitDiff {
 
     // Get the workspace folders
     if (!vscode.workspace.workspaceFolders?.length) {
-      console.log('[SourceTracker] No workspace folders');
+      this.debug.warn('No workspace folders available for file explorer decorations');
       return;
     }
 
@@ -1537,18 +1676,17 @@ class VirtualGitDiff {
         const gitRoot = this.getGitRepoRoot(folderPath);
 
         if (!gitRoot) {
-          console.log(`[SourceTracker] No Git root found for workspace folder: ${folderPath}`);
+          this.debug.warn(`No Git root found for workspace folder: ${folderPath}`);
           continue;
         }
 
-        // Resolve the base ref
         const resolvedRef = await this.resolveRefAsync(this.baseRef, gitRoot);
         if (!resolvedRef) {
-          console.log('[SourceTracker] Could not resolve base ref dynamically.');
+          this.debug.warn('Could not resolve base ref dynamically.');
           continue;
         }
 
-        console.log(`[SourceTracker] Getting file status against ref: ${resolvedRef} in ${gitRoot}`);
+        this.debug.log(`Getting file status against ref: ${resolvedRef} in ${gitRoot}`);
 
         // Get status of all files compared to base ref - use a more reliable command
         const result = await this.runGitCommand(
@@ -1557,11 +1695,11 @@ class VirtualGitDiff {
         );
 
         if (result.status !== 0 && result.status !== 1) {
-          console.log(`[SourceTracker] Error getting file status: ${result.stderr}`);
+          this.debug.warn(`Error getting file status: ${result.stderr}`);
           continue;
         }
 
-        console.log(`[SourceTracker] Raw git diff output: ${result.stdout.substring(0, 200)}${result.stdout.length > 200 ? '...' : ''}`);
+        this.debug.log(`Raw git diff output: ${result.stdout.substring(0, 200)}${result.stdout.length > 200 ? '...' : ''}`);
 
         // Parse the status output
         const statusLines = result.stdout.split('\n');
@@ -1573,7 +1711,7 @@ class VirtualGitDiff {
             const [, status, filePath] = statusMatch;
             const absolutePath = path.join(gitRoot, filePath);
 
-            console.log(`[SourceTracker] Found ${status} file: ${filePath}`);
+            this.debug.log(`Found ${status} file: ${filePath}`);
 
             if (status === 'A') {
               addedFiles.push(absolutePath);
@@ -1593,33 +1731,33 @@ class VirtualGitDiff {
           const untrackedFiles = untrackedResult.stdout.split('\n').filter(f => f.trim());
           for (const filePath of untrackedFiles) {
             const absolutePath = path.join(gitRoot, filePath);
-            console.log(`[SourceTracker] Found untracked file: ${filePath}`);
+            this.debug.log(`Found untracked file: ${filePath}`);
             addedFiles.push(absolutePath);
           }
         }
       }
 
-      console.log(`[SourceTracker] Found ${addedFiles.length} added files and ${modifiedFiles.length} modified files`);
+      this.debug.info(`Found ${addedFiles.length} added files and ${modifiedFiles.length} modified files`);
 
       // Set the decorations
       if (this.addedFileDecoration && typeof this.addedFileDecoration.setFiles === 'function') {
         this.addedFileDecoration.setFiles(addedFiles);
       } else {
-        console.error('[SourceTracker] addedFileDecoration is not properly initialized');
+        this.debug.error('addedFileDecoration is not properly initialized');
       }
 
       if (this.modifiedFileDecoration && typeof this.modifiedFileDecoration.setFiles === 'function') {
         this.modifiedFileDecoration.setFiles(modifiedFiles);
       } else {
-        console.error('[SourceTracker] modifiedFileDecoration is not properly initialized');
+        this.debug.error('modifiedFileDecoration is not properly initialized');
       }
     } catch (error) {
-      console.error(`[SourceTracker] Error updating file explorer decorations: ${error}`);
+      this.debug.error(`Error updating file explorer decorations: ${error}`);
     }
   }
 
   private processDiffResult(diffResult: Diff.Change[]): { added: DiffRange[]; removed: vscode.DecorationOptions[]; changed: vscode.DecorationOptions[]; created: DiffRange[] } {
-    console.log('[SourceTracker] processDiffResult called.');
+    this.debug.log('processDiffResult called.');
 
     const added: DiffRange[] = [];
     const removed: vscode.DecorationOptions[] = [];
@@ -1643,41 +1781,41 @@ class VirtualGitDiff {
       const lineCount = normalizedValue.split('\n').length - (normalizedValue.endsWith('\n') ? 1 : 0);
 
       if (part.added && removedLineCount > 0 && removedAt >= 0) {
-          // This is a change rather than just an addition
-          const minLines = Math.min(lineCount, removedLineCount);
+        // This is a change rather than just an addition
+        const minLines = Math.min(lineCount, removedLineCount);
 
-          // Mark the changed lines
-          for (let i = 0; i < minLines; i++) {
-            changed.push({ range: new vscode.Range(removedAt + i, 0, removedAt + i, 0) });
-          }
+        // Mark the changed lines
+        for (let i = 0; i < minLines; i++) {
+          changed.push({ range: new vscode.Range(removedAt + i, 0, removedAt + i, 0) });
+        }
 
-          // If there are more added lines than removed, mark the extra as additions
-          if (lineCount > removedLineCount) {
-            const startLine = removedAt + removedLineCount;
-            const endLine = lineNumber + lineCount - 1;
-            added.push({ startLine, endLine });
-          }
+        // If there are more added lines than removed, mark the extra as additions
+        if (lineCount > removedLineCount) {
+          const startLine = removedAt + removedLineCount;
+          const endLine = lineNumber + lineCount - 1;
+          added.push({ startLine, endLine });
+        }
 
           // Reset removed counter
-          removedLineCount = 0;
-          removedAt = -1;
+        removedLineCount = 0;
+        removedAt = -1;
 
-          lineNumber += lineCount;
+        lineNumber += lineCount;
       } else if (part.added) {
-          // This is a pure addition
-          const startLine = lineNumber;
-          const endLine = lineNumber + lineCount - 1;
+        // This is a pure addition
+        const startLine = lineNumber;
+        const endLine = lineNumber + lineCount - 1;
 
-          if (currentAddedRange && currentAddedRange.endLine === startLine - 1) {
-            // Extend existing range if consecutive
-            currentAddedRange.endLine = endLine;
-          } else {
-            // Start a new range
-            if (currentAddedRange) {
-              added.push({...currentAddedRange});
-            }
-            currentAddedRange = { startLine, endLine };
+        if (currentAddedRange && currentAddedRange.endLine === startLine - 1) {
+          // Extend existing range if consecutive
+          currentAddedRange.endLine = endLine;
+        } else {
+          // Start a new range
+          if (currentAddedRange) {
+            added.push({...currentAddedRange});
           }
+          currentAddedRange = { startLine, endLine };
+        }
 
         lineNumber += lineCount;
       } else if (part.removed) {
@@ -1754,7 +1892,7 @@ class VirtualGitDiff {
       }
     }
 
-    console.log('[SourceTracker] processDiffResult completed.');
+    this.debug.log('processDiffResult completed.');
     return { added, removed, changed, created };
   }
 
@@ -1762,7 +1900,7 @@ class VirtualGitDiff {
     editor: vscode.TextEditor,
     diffs: { added: DiffRange[]; removed: vscode.DecorationOptions[]; changed: vscode.DecorationOptions[]; created: DiffRange[] }
   ) {
-    console.log(`[SourceTracker] applyDecorations called for editor: ${editor.document.fileName}`);
+    this.debug.log(`applyDecorations called for editor: ${editor.document.fileName}`);
     const addedRanges = diffs.added.map(r => new vscode.Range(r.startLine, 0, r.endLine, 0));
     const createdRanges = diffs.created.map(r => new vscode.Range(r.startLine, 0, r.endLine, 0));
 
@@ -1777,7 +1915,7 @@ class VirtualGitDiff {
     if (this.snapshotManager) {
       const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
       if (activeSnapshot) {
-        console.log(`[SourceTracker] Found active snapshot for file: ${filePath}`);
+        this.debug.log(`Found active snapshot for file: ${filePath}`);
 
         const editor = vscode.window.visibleTextEditors.find(e => e.document.uri.fsPath === filePath);
         if (editor) {
@@ -1805,20 +1943,20 @@ class VirtualGitDiff {
 
     const gitRoot = this.getGitRepoRoot(filePath);
     if (!gitRoot) {
-      console.log(`[SourceTracker] No Git root found for file: ${filePath}. Returning empty diff.`);
+      this.debug.warn(`No Git root found for file: ${filePath}. Returning empty diff.`);
       return { added: [], removed: [], changed: [], created: [] };
     }
 
     const relativePath = path.relative(gitRoot, filePath);
-    console.log(`[SourceTracker] Git root: ${gitRoot}, Relative path: ${relativePath}`);
+    this.debug.log(`Git root: ${gitRoot}, Relative path: ${relativePath}`);
 
     // 🔁 Dynamically resolve base ref for this file
     const resolvedRef = await this.resolveRefAsync(this.baseRef, gitRoot);
     if (!resolvedRef) {
-      console.log('[SourceTracker] Could not resolve base ref dynamically.');
+      this.debug.warn('Could not resolve base ref dynamically.');
       return { added: [], removed: [], changed: [], created: [] };
     }
-    console.log(`[SourceTracker] Resolved base ref: ${resolvedRef}`);
+    this.debug.log(`Resolved base ref: ${resolvedRef}`);
 
     const editor = vscode.window.visibleTextEditors.find(e => e.document.uri.fsPath === filePath);
 
@@ -1832,7 +1970,7 @@ class VirtualGitDiff {
 
         // If status is not 0, the file might be newly added and not exist in the base ref
         if (baseContentResult.status !== 0) {
-          console.log(`[SourceTracker] File ${relativePath} might be newly added (not in base ref)`);
+          this.debug.log(`File ${relativePath} might be newly added (not in base ref)`);
           // Mark all lines as added for new files
           const lineCount = editor.document.lineCount;
           return {
@@ -1882,7 +2020,7 @@ class VirtualGitDiff {
         //   try { fs.unlinkSync(currentContentTempFile); } catch (_) {}
         // }
       } catch (error) {
-        console.log(`[SourceTracker] Error creating virtual diff: ${error}`);
+        this.debug.warn(`Error creating virtual diff: ${error}`);
         return { added: [], removed: [], changed: [], created: [] };
       }
     } else {
@@ -1892,9 +2030,9 @@ class VirtualGitDiff {
   }
 
   private parseUnifiedDiff(diffText: string): { added: DiffRange[]; removed: vscode.DecorationOptions[]; changed: vscode.DecorationOptions[]; created: DiffRange[] } {
-    console.log('[SourceTracker] parseUnifiedDiff called.');
-    // console.log('[SourceTracker] Processing the following diff text:');
-    // console.log(diffText);
+    this.debug.log('parseUnifiedDiff called.');
+    // this.debug.log('Processing the following diff text:');
+    // this.debug.log(diffText);
 
     const added: DiffRange[] = [];
     const created: DiffRange[] = [];
@@ -1990,10 +2128,10 @@ class VirtualGitDiff {
       added.push({ ...currentAddedRange });
     }
 
-    console.log('[SourceTracker] parseUnifiedDiff completed.');
-    // console.log(`[SourceTracker] Added Ranges: ${JSON.stringify(added)}`);
-    // console.log(`[SourceTracker] Removed Options: ${JSON.stringify(removed)}`);
-    // console.log(`[SourceTracker] Changed Options: ${JSON.stringify(changed)}`);
+    this.debug.log('parseUnifiedDiff completed.');
+    // this.debug.log(`Added Ranges: ${JSON.stringify(added)}`);
+    // this.debug.log(`Removed Options: ${JSON.stringify(removed)}`);
+    // this.debug.log(`Changed Options: ${JSON.stringify(changed)}`);
 
     return { added, removed, changed, created };
   }
@@ -2030,12 +2168,13 @@ class SnapshotManager {
   private snapshotDir: string;
   private indexFile: string;
   private index: SnapshotIndex = {};
+  private debug: DebugHandler;
 
-  constructor(private workspaceRoot: string) {
+  constructor(private workspaceRoot: string, debugHandler: DebugHandler) {
     // Create .sourcetracker directory if it doesn't exist
     this.snapshotDir = path.join(workspaceRoot, '.vscode', 'snapshots');
     this.indexFile = path.join(workspaceRoot, '.vscode', 'snapshot-index.json');
-
+    this.debug = debugHandler;
     // Load existing index if available
     this.loadIndex();
   }
@@ -2073,13 +2212,13 @@ class SnapshotManager {
     try {
       if (fs.existsSync(this.indexFile)) {
         this.index = JSON.parse(fs.readFileSync(this.indexFile, 'utf8'));
-        console.log(`[SourceTracker] Loaded snapshot index from ${this.indexFile}`);
+        this.debug.log(`Loaded snapshot index from ${this.indexFile}`);
       } else {
         this.index = {};
-        console.log(`[SourceTracker] No snapshot index found, creating new one`);
+        this.debug.log(`No snapshot index found, creating new one`);
       }
     } catch (error) {
-      console.error(`[SourceTracker] Error loading snapshot index: ${error}`);
+      this.debug.error(`Error loading snapshot index: ${error}`);
       this.index = {};
     }
   }
@@ -2090,9 +2229,9 @@ class SnapshotManager {
       this.ensureDirectoriesExist();
 
       fs.writeFileSync(this.indexFile, JSON.stringify(this.index, null, 2), 'utf8');
-      console.log(`[SourceTracker] Saved snapshot index to ${this.indexFile}`);
+      this.debug.log(`Saved snapshot index to ${this.indexFile}`);
     } catch (error) {
-      console.error(`[SourceTracker] Error saving snapshot index: ${error}`);
+      this.debug.error(`Error saving snapshot index: ${error}`);
     }
   }
 
@@ -2147,7 +2286,7 @@ class SnapshotManager {
           snapshots.push(snapshot);
         }
       } catch (error) {
-        console.error(`[SourceTracker] Error loading snapshot ${id}: ${error}`);
+        this.debug.error(`Error loading snapshot ${id}: ${error}`);
       }
     }
 
@@ -2182,7 +2321,7 @@ class SnapshotManager {
         return JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
       }
     } catch (error) {
-      console.error(`[SourceTracker] Error loading active snapshot ${id}: ${error}`);
+      this.debug.error(`Error loading active snapshot ${id}: ${error}`);
     }
 
     return undefined;

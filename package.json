@@ -80,6 +80,11 @@
         "icon": "$(sti-tracking-base-alt)"
       },
       {
+        "command": "sourceTracker.debugOptions",
+        "title": "SourceTracker: Debug",
+        "icon": "$(output)"
+      },
+      {
         "command": "sourceTracker.openTrackedFiles",
         "title": "SourceTracker: Open Tracked Files",
         "icon": "$(go-to-editing-session)"
