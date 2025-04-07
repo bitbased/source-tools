@@ -2,7 +2,7 @@
   "name": "bitbased-source-tracker",
   "displayName": "Source Tracker",
   "description": "Track code changes against any git reference or snapshots (not just the current branch) with visual indicators that work alongside built-in git features",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "bitbased",
   "author": "Brant Wedel (https://bitbased.net)",
   "engines": {
@@ -120,6 +120,14 @@
         "command": "sourceTracker.displayOptions",
         "title": "SourceTracker: Display Options",
         "icon": "$(sti-tracking-options-alt)"
+      }
+    ],
+    "statusBar": [
+      {
+        "id": "sourceTracker.statusBarTracking",
+        "alignment": "left",
+        "priority": 100,
+        "name": "Source Tracker: Tracking Ref"
       }
     ],
     "menus": {

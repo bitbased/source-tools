@@ -32,7 +32,9 @@ class VirtualGitDiff {
   private addedFileDecoration!: CustomFileDecorationProvider;
   private modifiedFileDecoration!: CustomFileDecorationProvider;
   private diffTimeout?: NodeJS.Timeout;
+  private statusBarUpdateInterval: NodeJS.Timeout | undefined;
   private snapshotManager?: SnapshotManager;
+  private statusBarItem: vscode.StatusBarItem;
   public outputLevel: string = "error"; // error, log, warn, info
   public consoleLevel: string = "error warn"; // error, log, warn, info
 
@@ -86,6 +88,15 @@ class VirtualGitDiff {
     this.outputLevel = this.context.globalState.get<string>('sourceTracker.outputLevel', 'error');
     this.consoleLevel = this.context.globalState.get<string>('sourceTracker.consoleLevel', 'error warn');
 
+
+    // Create the status bar item
+    this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    this.statusBarItem.command = 'sourceTracker.gitTrackingOptions';
+    this.updateStatusBar();
+
+    // Set up periodic status bar updates
+    this.statusBarUpdateInterval = setInterval(() => this.updateStatusBar(), 30000); // Update every 30 seconds
+
     // Let’s log some initial info
     this.debug.info('Extension constructor called.');
     this.debug.log(`Loaded baseRef from storage: ${this.baseRef}`);
@@ -100,6 +111,109 @@ class VirtualGitDiff {
       this.debug.info(`Initialized snapshot manager for workspace: ${vscode.workspace.workspaceFolders[0].uri.fsPath}`);
     }
 
+  }
+
+
+  // Add a dispose method to clean up resources
+  dispose() {
+    if (this.statusBarUpdateInterval) {
+      clearInterval(this.statusBarUpdateInterval);
+      this.statusBarUpdateInterval = undefined;
+    }
+
+    this.statusBarItem.dispose();
+    // Clean up any other resources as needed
+  }
+
+  /**
+   * Updates the status bar item with the current tracking reference
+   */
+  private async updateStatusBar() {
+    // Check if active editor has an active snapshot
+    const editor = vscode.window.activeTextEditor;
+    if (editor &&
+        editor.document &&
+        editor.document.uri.scheme === 'file' &&
+        this.snapshotManager) {
+      const filePath = editor.document.uri.fsPath;
+      const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
+
+      if (activeSnapshot) {
+        const relativeTime = this.getRelativeTimeString(activeSnapshot.timestamp);
+        if (relativeTime?.includes('second')) {
+          setTimeout(() => this.updateStatusBar(), 500);
+        }
+        this.statusBarItem.text = `$(sti-snapshot-compare) ${relativeTime}`;
+        this.statusBarItem.tooltip = `SourceTracker: Tracking snapshot "${activeSnapshot.message || 'No description'}"`;
+        this.statusBarItem.command = 'sourceTracker.snapshotTrackingOptions';
+        this.statusBarItem.color = new vscode.ThemeColor('gitDecoration.modifiedResourceForeground');
+        this.statusBarItem.show();
+        return;
+      }
+    }
+    this.statusBarItem.command = 'sourceTracker.gitTrackingOptions';
+
+    // Fall back to git tracking if no snapshot is active
+    if (this.baseRef) {
+
+      let refName = this.baseRef;
+
+      if (refName === 'master main trunk default') {
+        refName = 'master/main';
+      }
+
+      let resolvedRef = 'inactive';
+      const editor = vscode.window.activeTextEditor;
+      if (editor &&
+          editor.document &&
+          editor.document.uri.scheme === 'file'
+      ) {
+        const filePath = editor.document.uri.fsPath;
+        const gitRoot = this.getGitRepoRoot(filePath);
+        if (!gitRoot) {
+          // this.debug.warn(`No Git root found for file: ${filePath}. Returning empty diff.`);
+          // strikethrough
+          resolvedRef = 'no git';
+        } else {
+          const relativePath = path.relative(gitRoot, filePath);
+          this.debug.log(`Git root: ${gitRoot}, Relative path: ${relativePath}`);
+          // 🔁 Dynamically resolve base ref for this file
+          resolvedRef = await this.resolveRefAsync(this.baseRef, gitRoot) || '';
+          if (!resolvedRef) {
+            resolvedRef = 'not found';
+            // this.debug.warn('Could not resolve base ref dynamically.');
+          } else {
+            // this.debug.log(`Resolved base ref: ${resolvedRef}`);
+            // If it's a hash, just show a shortened version
+            if (/^[0-9a-f]{40}$/i.test(resolvedRef)) {
+              resolvedRef = resolvedRef.substring(0, 7);
+            }
+          }
+        }
+      } else {
+        resolvedRef = 'inactive';
+      }
+
+      if (resolvedRef === refName && /^[0-9a-f]{7}$/i.test(resolvedRef) ) {
+        refName = 'COMMIT';
+      }
+
+      this.statusBarItem.text = `$(sti-tracking-compare) ${refName} (${resolvedRef})`;
+      this.statusBarItem.tooltip = `SourceTracker: Tracking changes against ${refName} (${resolvedRef})`;
+      if (resolvedRef === 'no git' || resolvedRef === 'inactive') {
+        this.statusBarItem.color = new vscode.ThemeColor('disabledForeground');
+      } else if (resolvedRef === 'not found') {
+        this.statusBarItem.color = new vscode.ThemeColor('gitDecoration.deletedResourceForeground');
+      } else {
+        this.statusBarItem.color = new vscode.ThemeColor('gitDecoration.addedResourceForeground');
+      }
+      this.statusBarItem.show();
+    } else {
+      this.statusBarItem.text = `$(sti-tracking-compare) (inactive)`;
+      this.statusBarItem.tooltip = 'SourceTracker: Click to select a tracking reference';
+      this.statusBarItem.color = new vscode.ThemeColor('disabledForeground');;
+      this.statusBarItem.show();
+    }
   }
 
   private initDecorations() {
@@ -143,7 +257,7 @@ class VirtualGitDiff {
       } : {}),
       ...(useBorder ? {
         borderStyle: 'solid',
-        borderWidth: '0 0 0 3px',
+        borderWidth: '0 0 0 1px',
         borderColor: new vscode.ThemeColor('editorGutter.modifiedBackground'),
       } : {}),
       ...(useModifiedBackground ? {
@@ -163,7 +277,7 @@ class VirtualGitDiff {
       } : {}),
       ...(useBorder ? {
         borderStyle: 'solid',
-        borderWidth: '0 0 0 3px',
+        borderWidth: '0 0 0 1px',
         borderColor: new vscode.ThemeColor('editorGutter.addedBackground'),
       } : {}),
       ...(useBackground ? {
@@ -183,7 +297,7 @@ class VirtualGitDiff {
       } : {}),
       ...(useBorder ? {
         borderStyle: 'solid',
-        borderWidth: '0 0 0 3px',
+        borderWidth: '0 0 0 1px',
         borderColor: new vscode.ThemeColor('editorGutter.addedBackground'),
       } : {}),
       ...(useBackground ? {
@@ -338,8 +452,12 @@ class VirtualGitDiff {
     // Register the file decoration providers
     this.context.subscriptions.push(
       vscode.window.registerFileDecorationProvider(this.addedFileDecoration),
-      vscode.window.registerFileDecorationProvider(this.modifiedFileDecoration)
+      vscode.window.registerFileDecorationProvider(this.modifiedFileDecoration),
+      this.statusBarItem
     );
+
+    // Show the status bar with the current tracking reference
+    this.updateStatusBar();
 
     // Attempt an initial decoration update
     if (this.diffTimeout) {
@@ -756,6 +874,7 @@ class VirtualGitDiff {
           const snapshotId = actionId.substring('snapshot:'.length);
           if (this.snapshotManager) {
             this.snapshotManager.setActiveSnapshot(filePath, snapshotId);
+            this.updateStatusBar();
             vscode.window.showInformationMessage(`Activated snapshot: ${selectedItem.description}`);
             this.updateActiveEditorContext();
             this.updateDecorations();
@@ -806,7 +925,7 @@ class VirtualGitDiff {
 
       // Create a backup of the current content first
       const currentContent = editor.document.getText();
-      this.snapshotManager.takeSnapshot(filePath, currentContent, "Backup Snapshot");
+      this.snapshotManager.takeSnapshot(filePath, currentContent, "* Backup");
 
       // Replace the editor content with the snapshot content
       const edit = new vscode.WorkspaceEdit();
@@ -858,6 +977,8 @@ class VirtualGitDiff {
       // Clear context when no editor is active
       vscode.commands.executeCommand('setContext', 'sourceTracker.hasActiveSnapshot', false);
     }
+
+    this.updateStatusBar();
   }
 
   private async clearSnapshot(filePath: string, allForFile = false) {
@@ -981,6 +1102,12 @@ class VirtualGitDiff {
   private handleDocChange(event: vscode.TextDocumentChangeEvent) {
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor && event.document === activeEditor.document) {
+      // Skip non-file editors (output, terminal, webview, etc.)
+      if (activeEditor.document.uri.scheme === 'output') {
+        // dont output, since it can be recursive if we are outputting logs to output channel
+        // this.debug.log(`Ignoring changes for non-file editor: ${activeEditor.document.uri.scheme}`);
+        return;
+      }
       if (this.diffTimeout) {
         clearTimeout(this.diffTimeout);
       }
@@ -1446,6 +1573,9 @@ class VirtualGitDiff {
     // Persist the base ref to context
     await this.context.workspaceState.update('sourceTracker.trackingBaseRef', ref);
     this.debug.info(`Persisted baseRef to storage: ${ref}`);
+
+    // Update the status bar with the new tracking reference
+    this.updateStatusBar();
 
     // Update the VS Code context for when clauses
     await vscode.commands.executeCommand('setContext', 'sourceTracker.trackingBaseRef', ref);
@@ -2423,7 +2553,10 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-  // Optional cleanup
+  if (virtualGitDiff) {
+    virtualGitDiff.dispose();
+    virtualGitDiff = undefined as any;
+  }
 }
 
 // File snapshot handling
