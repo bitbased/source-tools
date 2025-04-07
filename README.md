@@ -21,7 +21,7 @@ Source Tracker allows you to visually track code changes against **any** git ref
 - **Flexible base ref selection** - track against any branch, commit, or automatic detection
 - **Compatible with other git tools** - uses the leftmost gutter, allowing you to see Source Tracker and built in git indicators simultaneously
 
-![Feature Screenshot](resources/screenshot.png)
+![Git tracking Feature Screenshot](resources/screenshot.png)
 
 ### 📸 File Snapshot Tracking
 
@@ -32,7 +32,7 @@ The Snapshot feature lets you take a point-in-time capture of a file:
 - **Session Persistence** - Snapshots persist across editor sessions
 - **Independent of Git** - Works even for unsaved changes or files outside of version control
 
-![Feature Screenshot](resources/screenshot-snapshots.png)
+![Snapshots Feature Screenshot](resources/screenshot-snapshots.png)
 
 ### 📑 Quick File Access
 
@@ -42,8 +42,12 @@ The Snapshot feature lets you take a point-in-time capture of a file:
 
 ### 🎨 Customization
 
-- Toggle file explorer color highlighting
-- Persistent settings across workspace sessions
+- **Editor Indicators** - Control the visibility and position of change indicators in the editor (gutter, scrollbar, or background highlighting)
+- **File Explorer Integration** - Toggle visibility of change indicators in the file explorer
+- **Persistent Settings** - Your configuration is remembered across workspace sessions
+
+![Display Options Feature Screenshot](resources/screenshot-display-options-item.png)
+![Display Options Feature Screenshot](resources/screenshot-display-options.png)
 
 ## Usage
 
@@ -55,6 +59,11 @@ The Snapshot feature lets you take a point-in-time capture of a file:
     - `HEAD` - Track changes since the current commit
     - A recent commit - Select from the list of recent commits
     - Custom reference - Type any valid git reference (branch name, commit hash, etc.)
+3. You can also activate tracking quickly using:
+   - The tracking icon in the file explorer title area
+   - The tracking icon in the editor title bar area
+
+![Activation Icons Feature Screenshot](resources/screenshot-icons.png)
 
 ### Visual Indicators
 
