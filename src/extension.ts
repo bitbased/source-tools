@@ -775,6 +775,7 @@ class VirtualGitDiff {
       { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
       { label: '', description: 'Snapshot Actions', kind: vscode.QuickPickItemKind.Default },
       ...(activeSnapshot ? [
+        { label: '$(edit) Rename Snapshot', description: 'Update the snapshot message', actionId: 'rename-snapshot' },
         { label: '$(discard) Revert To Snapshot', description: 'Restore file to snapshot state', actionId: 'revert-snapshot' },
         { label: '$(error) Delete Active Snapshot', description: 'Clear the current snapshot', actionId: 'delete-active-snapshot' },
       ] : []),
@@ -868,6 +869,12 @@ class VirtualGitDiff {
                 vscode.window.showWarningMessage('Snapshot creation cancelled: No name provided.');
               }
             });
+          }
+        } else if (actionId === 'rename-snapshot') {
+          if (activeSnapshot) {
+            this.renameSnapshot(filePath, activeSnapshot.id);
+          } else {
+            vscode.window.showErrorMessage('No active snapshot to rename');
           }
         } else if (actionId && actionId.startsWith('snapshot:')) {
           // A specific snapshot was selected - activate it
@@ -1020,6 +1027,41 @@ class VirtualGitDiff {
     } catch (error) {
       this.debug.error(`Error clearing snapshots: ${error}`);
       vscode.window.showErrorMessage(`Failed to clear snapshots: ${error}`);
+    }
+  }
+
+  private renameSnapshot(filePath: string, id: string) {
+    if (!this.snapshotManager) {
+      vscode.window.showErrorMessage('Snapshot manager is not initialized');
+      return;
+    }
+
+    try {
+      // Get the snapshot by ID
+      const snapshot = this.snapshotManager.getSnapshotById(filePath, id);
+      if (!snapshot) {
+        vscode.window.showErrorMessage(`Snapshot not found: ${id}`);
+        return;
+      }
+
+      // Prompt for a new message
+      vscode.window.showInputBox({
+        prompt: 'Enter a new message for the snapshot',
+        placeHolder: 'Snapshot message',
+        value: snapshot.message || ''
+      }).then(newMessage => {
+        if (newMessage !== undefined) { // User didn't cancel
+          // Update the snapshot message
+          if (this.snapshotManager) {
+            this.snapshotManager.updateSnapshotMessage(filePath, id, newMessage);
+            vscode.window.showInformationMessage(`Snapshot message updated`);
+            this.debug.info(`Updated message for snapshot ${id} of file: ${filePath}`);
+          }
+        }
+      });
+    } catch (error) {
+      this.debug.error(`Error renaming snapshot: ${error}`);
+      vscode.window.showErrorMessage(`Failed to rename snapshot: ${error}`);
     }
   }
 
@@ -2718,6 +2760,17 @@ class SnapshotManager {
   }
 
   /**
+   * Get a specific snapshot by its ID for a file
+   * @param filePath The path to the file
+   * @param id The snapshot ID to retrieve
+   * @returns The snapshot if found, undefined otherwise
+   */
+  public getSnapshotById(filePath: string, id: string): FileSnapshot | undefined {
+    const snapshots = this.getSnapshots(filePath);
+    return snapshots.find(snapshot => snapshot.id === id);
+  }
+
+  /**
     * Get the active snapshot for a file
     */
   public getActiveSnapshot(filePath: string): FileSnapshot | undefined {
@@ -2761,6 +2814,37 @@ class SnapshotManager {
     }
 
     this.saveIndex();
+  }
+
+  /**
+   * Updates the message for an existing snapshot
+   * @param filePath The path to the file
+   * @param id The ID of the snapshot to update
+   * @param message The new message for the snapshot
+   */
+  updateSnapshotMessage(filePath: string, id: string, message: string): void {
+    try {
+      // Get the snapshot file path
+      const snapshotPath = path.join(this.snapshotDir, `${id}.json`);
+
+      // Check if the snapshot exists
+      if (fs.existsSync(snapshotPath)) {
+        // Read the snapshot file
+        const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+
+        // Update the message
+        snapshot.message = message;
+
+        // Write the updated snapshot back to the file
+        fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), 'utf8');
+
+        this.debug.log(`Updated message for snapshot ${id}`);
+      } else {
+        this.debug.error(`Snapshot file not found: ${snapshotPath}`);
+      }
+    } catch (error) {
+      this.debug.error(`Error updating snapshot message: ${error}`);
+    }
   }
 
   /**
