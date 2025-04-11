@@ -438,6 +438,21 @@ class VirtualGitDiff {
         this.debug.log('>>> sourceTracker.diffFileSnapshot', args);
         this.diffTrackedFile(); // same logic
       }),
+      vscode.commands.registerCommand('sourceTracker.stageFileSnapshot', (...args) => {
+        this.debug.log('>>> sourceTracker.stageFileSnapshot', ...args);
+        const filePath = vscode.window.activeTextEditor?.document.uri.fsPath;
+        const snapshotId = args[0];
+        if (filePath && snapshotId) {
+          this.stageSnapshot(filePath, snapshotId);
+        } else if (filePath && this.snapshotManager) {
+          const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
+          if (activeSnapshot) {
+            this.stageSnapshot(filePath, activeSnapshot.id);
+          } else {
+            vscode.window.showErrorMessage('No active snapshot to stage');
+          }
+        }
+      }),
       vscode.commands.registerCommand('sourceTracker.snapshotTrackingOptions', (...args) => {
         this.debug.log('>>> sourceTracker.snapshotTrackingOptions', ...args);
         this.selectSnapshotTrackingOptions(args[0]);
@@ -784,6 +799,7 @@ class VirtualGitDiff {
       { label: '', description: 'Tracking Actions', kind: vscode.QuickPickItemKind.Default },
       { label: '$(device-camera) Take Snapshot', description: 'Type a message to take a new snapshot', actionId: 'take-snapshot' },
       { label: '$(sti-snapshot-compare) Diff tracked file', description: 'Diff current file against snapshot', actionId: 'diff-tracked-file' },
+      { label: '$(source-control) Stage To Git', description: 'Stage current file snapshot content to Git', actionId: 'stage-snapshot' },
       { label: '', description: '', kind: vscode.QuickPickItemKind.Separator },
       { label: '$(sti-tracking-base-alt) Git Tracking', description: 'Open git tracking options', actionId: 'git-tracking' },
       { label: '$(sti-tracking-options-alt) Display Options', description: 'Open tracking display options', actionId: 'display-options' }
@@ -843,6 +859,12 @@ class VirtualGitDiff {
           this.clearSnapshot(filePath, true);
         } else if (actionId === 'disable-snapshot') {
           this.deactivateSnapshot(filePath);
+        } else if (actionId === 'stage-snapshot') {
+          if (activeSnapshot) {
+            this.stageSnapshot(filePath, activeSnapshot.id);
+          } else {
+            vscode.window.showErrorMessage('No active snapshot to stage');
+          }
         } else if (actionId === 'diff-tracked-file') {
           this.diffTrackedFile();
         } else if (actionId === 'display-options') {
@@ -1062,6 +1084,85 @@ class VirtualGitDiff {
     } catch (error) {
       this.debug.error(`Error renaming snapshot: ${error}`);
       vscode.window.showErrorMessage(`Failed to rename snapshot: ${error}`);
+    }
+  }
+
+  private stageSnapshot(filePath: string, id: string) {
+    if (!this.snapshotManager) {
+      vscode.window.showErrorMessage('Snapshot manager is not initialized');
+      return;
+    }
+
+    try {
+      // Get the snapshot by ID
+      const snapshot = this.snapshotManager.getSnapshotById(filePath, id);
+      if (!snapshot) {
+        vscode.window.showErrorMessage(`Snapshot not found: ${id}`);
+        return;
+      }
+
+      // Get the Git repository root for this file
+      const gitRoot = this.getGitRepoRoot(filePath);
+      if (!gitRoot) {
+        vscode.window.showErrorMessage('File is not in a Git repository');
+        return;
+      }
+
+      // Get the relative path to the file from the git root
+      const relativePath = path.relative(gitRoot, filePath);
+
+      // Create a temporary file with the snapshot content
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sourcetracker-'));
+      const tempFilePath = path.join(tempDir, path.basename(filePath));
+
+      // Write the snapshot content to the temporary file
+      fs.writeFileSync(tempFilePath, snapshot.content);
+
+      // Use Git's hash-object command to add the content to Git's object database
+      const hashResult = spawnSync('git', ['hash-object', '-w', tempFilePath], {
+        cwd: gitRoot,
+        encoding: 'utf-8'
+      });
+
+      if (hashResult.status !== 0) {
+        vscode.window.showErrorMessage(`Failed to hash object: ${hashResult.stderr}`);
+        return;
+      }
+
+      // Get the hash of the object
+      const hash = hashResult.stdout.trim();
+
+      // Use Git's update-index command to update the staging area
+      const updateResult = spawnSync('git', ['update-index', '--cacheinfo', '100644', hash, relativePath], {
+        cwd: gitRoot,
+        encoding: 'utf-8'
+      });
+
+      // Clean up the temporary file
+      fs.unlinkSync(tempFilePath);
+      fs.rmdirSync(tempDir);
+
+      if (updateResult.status === 0) {
+        vscode.window.showInformationMessage(`Staged snapshot: ${snapshot.message || 'No message'}`);
+        this.debug.info(`Successfully staged snapshot ${id} for file: ${filePath}`);
+
+        // Offer to commit the changes
+        vscode.window.showInformationMessage(
+          `Snapshot staged. Do you want to commit it?`,
+          'Yes', 'No'
+        ).then(selection => {
+          if (selection === 'Yes') {
+            // Open the Git commit dialog
+            vscode.commands.executeCommand('git.commitStaged');
+          }
+        });
+      } else {
+        vscode.window.showErrorMessage(`Failed to stage snapshot: ${updateResult.stderr}`);
+        this.debug.error(`Failed to stage snapshot ${id}: ${updateResult.stderr}`);
+      }
+    } catch (error) {
+      this.debug.error(`Error staging snapshot: ${error}`);
+      vscode.window.showErrorMessage(`Error staging snapshot: ${error}`);
     }
   }
 
