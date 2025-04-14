@@ -113,8 +113,6 @@ class VirtualGitDiff {
 
   }
 
-
-  // Add a dispose method to clean up resources
   dispose() {
     if (this.statusBarUpdateInterval) {
       clearInterval(this.statusBarUpdateInterval);
@@ -122,7 +120,6 @@ class VirtualGitDiff {
     }
 
     this.statusBarItem.dispose();
-    // Clean up any other resources as needed
   }
 
   /**
@@ -791,7 +788,7 @@ class VirtualGitDiff {
       { label: '', description: 'Snapshot Actions', kind: vscode.QuickPickItemKind.Default },
       ...(activeSnapshot ? [
         { label: '$(edit) Rename Snapshot', description: 'Update the snapshot message', actionId: 'rename-snapshot' },
-        { label: '$(discard) Revert To Snapshot', description: 'Restore file to snapshot state', actionId: 'revert-snapshot' },
+        { label: '$(discard) Apply Snapshot', description: 'Restore file to snapshot state', actionId: 'apply-snapshot' },
         { label: '$(error) Delete Active Snapshot', description: 'Clear the current snapshot', actionId: 'delete-active-snapshot' },
       ] : []),
       { label: '$(clear-all) Delete File Snapshots', description: 'Clear all snapshots for this file', actionId: 'delete-all-snapshots' },
@@ -851,8 +848,8 @@ class VirtualGitDiff {
       if (selectedItem) {
         const actionId = selectedItem.actionId;
 
-        if (actionId === 'revert-snapshot') {
-          this.restoreFromSnapshot(filePath);
+        if (actionId === 'apply-snapshot') {
+          this.applySnapshot(filePath);
         } else if (actionId === 'delete-active-snapshot') {
           this.clearSnapshot(filePath);
         } else if (actionId === 'delete-all-snapshots') {
@@ -920,8 +917,8 @@ class VirtualGitDiff {
     quickPick.show();
   }
 
-  private async restoreFromSnapshot(filePath: string) {
-    this.debug.info(`restoreFromSnapshot called for file: ${filePath}`);
+  private async applySnapshot(filePath: string) {
+    this.debug.info(`applySnapshot called for file: ${filePath}`);
     if (!this.snapshotManager) {
       vscode.window.showErrorMessage('Snapshot manager is not initialized');
       return;
@@ -929,18 +926,18 @@ class VirtualGitDiff {
 
     const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
     if (!activeSnapshot) {
-      vscode.window.showInformationMessage('No active snapshot to restore from');
+      vscode.window.showInformationMessage('No active snapshot to apply');
       return;
     }
 
     try {
       const editor = vscode.window.activeTextEditor;
       if (!editor || editor.document.uri.fsPath !== filePath) {
-        vscode.window.showErrorMessage('Cannot restore snapshot: file not open in editor');
+        vscode.window.showErrorMessage('Cannot apply snapshot: file not open in editor');
         return;
       }
 
-      // Confirm with user before restoring from snapshot
+      // Confirm with user before apply snapshot
       const confirmed = await vscode.window.showWarningMessage(
         `This will replace the current file content with the snapshot from ${new Date(activeSnapshot.timestamp).toLocaleString()}. Continue?`,
         { modal: true },
@@ -948,13 +945,13 @@ class VirtualGitDiff {
       );
 
       if (confirmed !== 'Yes') {
-        this.debug.info(`User cancelled restore from snapshot`);
+        this.debug.info(`User cancelled apply snapshot`);
         return;
       }
 
       // Create a backup of the current content first
       const currentContent = editor.document.getText();
-      this.snapshotManager.takeSnapshot(filePath, currentContent, "* Backup");
+      this.snapshotManager.takeSnapshot(filePath, currentContent, "* Auto Backup");
 
       // Replace the editor content with the snapshot content
       const edit = new vscode.WorkspaceEdit();
@@ -965,14 +962,14 @@ class VirtualGitDiff {
       edit.replace(editor.document.uri, fullRange, activeSnapshot.content);
 
       await vscode.workspace.applyEdit(edit);
-      vscode.window.showInformationMessage(`Restored from snapshot: ${new Date(activeSnapshot.timestamp).toLocaleString()}`);
-      this.debug.info(`Restored file from snapshot: ${filePath}`);
+      vscode.window.showInformationMessage(`Applied snapshot: ${new Date(activeSnapshot.timestamp).toLocaleString()}`);
+      this.debug.info(`Applied snapshot: ${filePath}`);
 
-      // Update context after restoring from snapshot
+      // Update context after applying snapshot
       this.updateActiveEditorContext(editor);
     } catch (error) {
-      this.debug.error(`Error restoring from snapshot: ${error}`);
-      vscode.window.showErrorMessage(`Failed to restore from snapshot: ${error}`);
+      this.debug.error(`Error applying snapshot: ${error}`);
+      vscode.window.showErrorMessage(`Failed to apply snapshot: ${error}`);
     }
   }
 
