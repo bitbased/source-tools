@@ -267,12 +267,12 @@ class VirtualGitDiff {
       const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
 
       if (activeSnapshot) {
-        const relativeTime = this.getRelativeTimeString(activeSnapshot.timestamp);
+        const relativeTime = this.getRelativeTimeString(activeSnapshot.metadata.timestamp ?? 0);
         if (relativeTime?.includes('second')) {
           setTimeout(() => this.updateStatusBar(), 500);
         }
         this.statusBarItem.text = `$(sti-snapshot-compare) ${relativeTime}`;
-        this.statusBarItem.tooltip = `SourceTracker: Tracking snapshot "${activeSnapshot.message || 'No description'}"`;
+        this.statusBarItem.tooltip = `SourceTracker: Tracking snapshot "${activeSnapshot.metadata.message || 'No description'}"`;
         this.statusBarItem.command = 'sourceTracker.snapshotTrackingOptions';
         this.statusBarItem.color = new vscode.ThemeColor('gitDecoration.modifiedResourceForeground');
         this.statusBarItem.show();
@@ -576,7 +576,7 @@ class VirtualGitDiff {
         } else if (filePath && this.snapshotManager) {
           const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
           if (activeSnapshot) {
-            this.stageSnapshot(filePath, activeSnapshot.id);
+            this.stageSnapshot(filePath, activeSnapshot.metadata.id ?? '');
           } else {
             vscode.window.showErrorMessage('No active snapshot to stage');
           }
@@ -911,13 +911,13 @@ class VirtualGitDiff {
     // Create QuickPickItems for each snapshot
     const snapshotItems: (vscode.QuickPickItem & { actionId?: string })[] = snapshots.map(snapshot => {
       // Check if this is the active snapshot
-      const isActive = activeSnapshot && snapshot.id === activeSnapshot.id;
+      const isActive = activeSnapshot && snapshot.metadata.id === activeSnapshot.metadata.id;
       return {
         label: isActive
-          ? `$(triangle-right)${this.getRelativeTimeString(snapshot.timestamp)}`
-          : (activeSnapshot ? `$(blank)${this.getRelativeTimeString(snapshot.timestamp)}` : `$(blank)${this.getRelativeTimeString(snapshot.timestamp)}`),
-        description: snapshot.message || 'No description',
-        actionId: `snapshot:${snapshot.id}`
+          ? `$(triangle-right)${this.getRelativeTimeString(snapshot.metadata.timestamp ?? 0)}`
+          : (activeSnapshot ? `$(blank)${this.getRelativeTimeString(snapshot.metadata.timestamp ?? 0)}` : `$(blank)${this.getRelativeTimeString(snapshot.metadata.timestamp ?? 0)}`),
+        description: snapshot.metadata.message || 'No description',
+        actionId: `snapshot:${snapshot.metadata.id}`
       };
     });
 
@@ -953,7 +953,7 @@ class VirtualGitDiff {
     quickPick.items = options;
     // Set currently active snapshot as selected if one exists
     if (activeSnapshot) {
-      const activeItem = snapshotItems.find(item => item.actionId === `snapshot:${activeSnapshot.id}`);
+      const activeItem = snapshotItems.find(item => item.actionId === `snapshot:${activeSnapshot.metadata.id}`);
       if (activeItem) {
         quickPick.activeItems = [activeItem];
       }
@@ -1004,7 +1004,7 @@ class VirtualGitDiff {
           this.deactivateSnapshot(filePath);
         } else if (actionId === 'stage-snapshot') {
           if (activeSnapshot) {
-            this.stageSnapshot(filePath, activeSnapshot.id);
+            this.stageSnapshot(filePath, activeSnapshot.metadata.id ?? '');
           } else {
             vscode.window.showErrorMessage('No active snapshot to stage');
           }
@@ -1037,7 +1037,7 @@ class VirtualGitDiff {
           }
         } else if (actionId === 'rename-snapshot') {
           if (activeSnapshot) {
-            this.renameSnapshot(filePath, activeSnapshot.id);
+            this.renameSnapshot(filePath, activeSnapshot.metadata.id ?? '');
           } else {
             vscode.window.showErrorMessage('No active snapshot to rename');
           }
@@ -1085,7 +1085,7 @@ class VirtualGitDiff {
 
       // Confirm with user before apply snapshot
       const confirmed = await vscode.window.showWarningMessage(
-        `This will replace the current file content with the snapshot from ${new Date(activeSnapshot.timestamp).toLocaleString()}. Continue?`,
+        `This will replace the current file content with the snapshot from ${new Date(activeSnapshot.metadata.timestamp ?? 0).toLocaleString()}. Continue?`,
         { modal: true },
         'Yes', 'No'
       );
@@ -1097,7 +1097,9 @@ class VirtualGitDiff {
 
       // Create a backup of the current content first
       const currentContent = editor.document.getText();
-      this.snapshotManager.takeSnapshot(filePath, currentContent, "* Auto Backup");
+
+      const metadata = await this.getGitMetadata(filePath);
+      this.snapshotManager.takeSnapshot(filePath, currentContent, "* Auto Backup", metadata);
 
       // Replace the editor content with the snapshot content
       const edit = new vscode.WorkspaceEdit();
@@ -1108,7 +1110,7 @@ class VirtualGitDiff {
       edit.replace(editor.document.uri, fullRange, activeSnapshot.content);
 
       await vscode.workspace.applyEdit(edit);
-      vscode.window.showInformationMessage(`Applied snapshot: ${new Date(activeSnapshot.timestamp).toLocaleString()}`);
+      vscode.window.showInformationMessage(`Applied snapshot: ${new Date(activeSnapshot.metadata.timestamp ?? 0).toLocaleString()}`);
       this.debug.info(`Applied snapshot: ${filePath}`);
 
       // Update context after applying snapshot
@@ -1176,7 +1178,7 @@ class VirtualGitDiff {
       } else {
         const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
         if (activeSnapshot) {
-          this.snapshotManager.deleteSnapshot(filePath, activeSnapshot.id);
+          this.snapshotManager.deleteSnapshot(filePath, activeSnapshot.metadata.id ?? '');
         } else {
           vscode.window.showInformationMessage('No active snapshot to clear');
         }
@@ -1213,7 +1215,7 @@ class VirtualGitDiff {
       vscode.window.showInputBox({
         prompt: 'Enter a new message for the snapshot',
         placeHolder: 'Snapshot message',
-        value: snapshot.message || ''
+        value: snapshot.metadata.message || ''
       }).then(newMessage => {
         if (newMessage !== undefined) { // User didn't cancel
           // Update the snapshot message
@@ -1286,7 +1288,7 @@ class VirtualGitDiff {
       fs.rmdirSync(tempDir);
 
       if (updateResult.status === 0) {
-        vscode.window.showInformationMessage(`Staged snapshot: ${snapshot.message || 'No message'}`);
+        vscode.window.showInformationMessage(`Staged snapshot: ${snapshot.metadata.message || 'No message'}`);
         this.debug.info(`Successfully staged snapshot ${id} for file: ${filePath}`);
 
         // Offer to commit the changes
@@ -1331,7 +1333,49 @@ class VirtualGitDiff {
     }
   }
 
-  private takeNewSnapshot(filePath: string, message: string) {
+  /**
+   * Fetches Git commit metadata for a file if in a Git repository.
+   */
+  private async getGitMetadata(filePath: string): Promise<CommitMetadata> {
+    const metadata: CommitMetadata = {};
+    const now = new Date();
+    const gitRoot = this.getGitRepoRoot(filePath);
+    if (gitRoot) {
+      try {
+        // Get all commit info in a single command
+        const gitInfo = (await this.runGitCommand([
+          'log',
+          '-1',
+          '--pretty=format:%H%n%an%n%ae%n%ai%n%D%n%s'
+        ], gitRoot)).stdout?.trim();
+
+        if (gitInfo) {
+          const [hash, authorName, authorEmail, authorDate, refNames, subject] = gitInfo.split('\n');
+          metadata.hash = hash;
+          metadata.authorName = authorName;
+          metadata.authorEmail = authorEmail;
+          metadata.authorTimestamp = new Date(authorDate).getTime();
+          metadata.subject = subject;
+          // Store raw ref names
+          // if (refNames) {
+          //   metadata.refNames = refNames.trim();
+          // }
+          // Get current branch separately since it's more reliable this way
+          const branch = (await this.runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], gitRoot)).stdout?.trim();
+          if (branch) {
+            metadata.branch = branch;
+          }
+        } else {
+          metadata.authorDate = now.toISOString();
+        }
+      } catch (error) {
+        this.debug.warn(`Failed to get git metadata: ${error}`);
+      }
+    }
+    return metadata;
+  }
+
+  private async takeNewSnapshot(filePath: string, message: string, isAuto = false) {
     this.debug.log(`takeNewSnapshot called with filePath: ${filePath}, message: ${message}`);
     if (!this.snapshotManager) {
       vscode.window.showErrorMessage('Snapshot manager is not initialized');
@@ -1349,7 +1393,9 @@ class VirtualGitDiff {
       const content = editor.document.getText();
 
       // Use the correct method: takeSnapshot
-      const snapshotId = this.snapshotManager.takeSnapshot(filePath, content, message);
+
+      const metadata = await this.getGitMetadata(filePath);
+      const snapshotId = this.snapshotManager.takeSnapshot(filePath, content, message, metadata);
 
       // Set it as the active snapshot
       this.snapshotManager.setActiveSnapshot(filePath, snapshotId);
@@ -2071,9 +2117,9 @@ class VirtualGitDiff {
     if (this.snapshotManager) {
       const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
       if (activeSnapshot) {
-        this.debug.log(`Using active snapshot for diff: ${activeSnapshot.id}`);
+        this.debug.log(`Using active snapshot for diff: ${activeSnapshot.metadata.id}`);
         // Create a title for the diff view
-        const title = `${path.basename(filePath)} (Snapshot: ${new Date(activeSnapshot.timestamp).toLocaleString()})`;
+        const title = `${path.basename(filePath)} (Snapshot: ${new Date(activeSnapshot.metadata.timestamp ?? 0).toLocaleString()})`;
 
         // Create a virtual document URI
         const baseContent = activeSnapshot.content;
@@ -2845,32 +2891,58 @@ export function deactivate() {
   }
 }
 
-// File snapshot handling
-interface FileSnapshot {
-  id: string;          // Unique identifier for the snapshot
-  filePath: string;    // Path to the file relative to workspace
-  message: string;     // User-provided description
-  timestamp: number;   // When the snapshot was taken
-  content: string;     // The file content at snapshot time
+// Define interface for snapshot metadata
+interface CommitMetadata {
+  hash?: string;              // Commit hash
+  subject?: string;           // First line of the commit message
+  commitMessage?: string;     // Full commit message
+  authorName?: string;        // Author name
+  authorEmail?: string;       // Author email
+  authorDate?: string;        // Author date
+  authorTimestamp?: number;   // Author timestamp
+  branch?: string;            // Snapshot source branch
 }
 
+// Define interface for snapshot metadata
+interface SnapshotMetadata extends Partial<CommitMetadata> {
+  id?: string;                 // Unique identifier for the snapshot
+  filePath?: string;           // Path to the file relative to workspace
+  message?: string;            // User-provided description
+  timestamp?: number;          // When the snapshot was taken
+}
+
+// Interface for file snapshots, combining metadata and content
+interface FileSnapshot {
+  metadata: SnapshotMetadata;
+  content: string;            // The file content at snapshot time
+}
+
+// Interface for the snapshot index structure
 interface SnapshotIndex {
   [filePath: string]: {
-    snapshots: string[];  // Array of snapshot IDs for this file
-    activeSnapshot?: string; // Currently active snapshot ID
+    snapshots: { [snapshotId: string]: SnapshotMetadata }; // Map of snapshot IDs to metadata
+    activeSnapshot?: string;  // Currently active snapshot ID
   };
 }
 
+/**
+  * Manages file snapshots for tracking changes over time
+  */
 class SnapshotManager {
   private snapshotDir: string;
   private indexFile: string;
   private index: SnapshotIndex = {};
   private debug: DebugHandler;
 
+  /**
+    * Creates a new SnapshotManager
+    * @param workspaceRoot Root directory of the workspace
+    * @param debugHandler Debug handler for logging
+    */
   constructor(private workspaceRoot: string, debugHandler: DebugHandler) {
     // Create .sourcetracker directory if it doesn't exist
     this.snapshotDir = path.join(workspaceRoot, '.vscode', 'snapshots');
-    this.indexFile = path.join(workspaceRoot, '.vscode', 'snapshot-index.json');
+    this.indexFile = path.join(workspaceRoot, '.vscode', 'snapshots.json');
     this.debug = debugHandler;
     // Load existing index if available
     this.loadIndex();
@@ -2880,7 +2952,7 @@ class SnapshotManager {
     * Ensure the necessary directories exist, but only if we have snapshots
     * This prevents creating directories unless the feature is actually used
     */
-  private ensureDirectoriesExist() {
+  private ensureDirectoriesExist(): void {
     // Only create directories if we have at least one snapshot
     const hasSnapshots = Object.keys(this.index).length > 0;
 
@@ -2898,6 +2970,7 @@ class SnapshotManager {
   /**
     * Check if we're in the middle of a file operation
     * This helps determine if we should create directories
+    * @returns True if a file operation is in progress
     */
   private isFileOperationInProgress(): boolean {
     // We can assume a file operation is in progress if this method is called
@@ -2905,7 +2978,10 @@ class SnapshotManager {
     return true;
   }
 
-  private loadIndex() {
+  /**
+    * Load the snapshot index from disk
+    */
+  private loadIndex(): void {
     try {
       if (fs.existsSync(this.indexFile)) {
         this.index = JSON.parse(fs.readFileSync(this.indexFile, 'utf8'));
@@ -2920,7 +2996,10 @@ class SnapshotManager {
     }
   }
 
-  private saveIndex() {
+  /**
+    * Save the snapshot index to disk
+    */
+  private saveIndex(): void {
     try {
       // Ensure directories exist before saving
       this.ensureDirectoriesExist();
@@ -2934,33 +3013,38 @@ class SnapshotManager {
 
   /**
     * Take a new snapshot of a file
+    * @param filePath Path to the file to snapshot
+    * @param content Content of the file
+    * @param message User message describing the snapshot
+    * @param metadata Optional additional metadata
+    * @returns The ID of the created snapshot
     */
-  public takeSnapshot(filePath: string, content: string, message: string): string {
+  public takeSnapshot(filePath: string, content: string, message: string, metadata: Partial<SnapshotMetadata> = {}): string {
     // Ensure directories exist since we're about to create a file
     this.ensureDirectoriesExist();
 
     // Generate unique ID for this snapshot
     const id = `${path.basename(filePath)}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-    // Create the snapshot object
-    const snapshot: FileSnapshot = {
+    // Create the metadata object
+    const snapshotMetadata: SnapshotMetadata = {
       id,
-      filePath: filePath,
+      filePath,
       message,
       timestamp: Date.now(),
-      content
+      ...metadata // Spread additional metadata if provided
     };
 
-    // Save the snapshot to a file
-    const snapshotPath = path.join(this.snapshotDir, `${id}.json`);
-    fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), 'utf8');
+    // Save the content to a separate file
+    const contentPath = path.join(this.snapshotDir, `${id}.content`);
+    fs.writeFileSync(contentPath, content, 'utf8');
 
     // Update the index
     if (!this.index[filePath]) {
-      this.index[filePath] = { snapshots: [] };
+      this.index[filePath] = { snapshots: {} };
     }
 
-    this.index[filePath].snapshots.push(id);
+    this.index[filePath].snapshots[id] = snapshotMetadata;
     this.saveIndex();
 
     return id;
@@ -2968,35 +3052,48 @@ class SnapshotManager {
 
   /**
     * Get all snapshots for a file
+    * @param filePath Path to the file
+    * @returns Array of file snapshots sorted by timestamp (newest first)
     */
   public getSnapshots(filePath: string): FileSnapshot[] {
-    if (!this.index[filePath] || !this.index[filePath].snapshots.length) {
+    if (!this.index[filePath] || Object.keys(this.index[filePath].snapshots).length === 0) {
       return [];
     }
 
     const snapshots: FileSnapshot[] = [];
-    for (const id of this.index[filePath].snapshots) {
+    const fileSnapshots = this.index[filePath].snapshots;
+
+    for (const id in fileSnapshots) {
+      const metadata = fileSnapshots[id];
       try {
-        const snapshotPath = path.join(this.snapshotDir, `${id}.json`);
-        if (fs.existsSync(snapshotPath)) {
-          const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
-          snapshots.push(snapshot);
+        const contentPath = path.join(this.snapshotDir, `${id}.content`);
+        if (fs.existsSync(contentPath)) {
+          const content = fs.readFileSync(contentPath, 'utf8');
+          snapshots.push({ metadata, content }); // Combine metadata from index and content from file
+        } else {
+          this.debug.warn(`Content file not found for snapshot ${id}: ${contentPath}`);
         }
       } catch (error) {
-        this.debug.error(`Error loading snapshot ${id}: ${error}`);
+        this.debug.error(`Error loading content for snapshot ${id}: ${error}`);
       }
     }
 
     // Sort by timestamp, newest first
-    return snapshots.sort((a, b) => b.timestamp - a.timestamp);
+    return snapshots.sort((a, b) => (b.metadata.timestamp ?? 0) - (a.metadata.timestamp ?? 0));
   }
 
   /**
     * Set the active snapshot for a file
+    * @param filePath Path to the file
+    * @param snapshotId ID of the snapshot to set as active, or undefined to clear
     */
-  public setActiveSnapshot(filePath: string, snapshotId: string | undefined) {
+  public setActiveSnapshot(filePath: string, snapshotId: string | undefined): void {
+    // Ensure directories exist if we are modifying the index
+    this.ensureDirectoriesExist();
+
     if (!this.index[filePath]) {
-      this.index[filePath] = { snapshots: [] };
+      // If setting an active snapshot for a file with no snapshots yet, initialize
+      this.index[filePath] = { snapshots: {} };
     }
 
     this.index[filePath].activeSnapshot = snapshotId;
@@ -3004,32 +3101,67 @@ class SnapshotManager {
   }
 
   /**
-   * Get a specific snapshot by its ID for a file
-   * @param filePath The path to the file
-   * @param id The snapshot ID to retrieve
-   * @returns The snapshot if found, undefined otherwise
-   */
+    * Get a specific snapshot by its ID for a file
+    * @param filePath The path to the file
+    * @param id The snapshot ID to retrieve
+    * @returns The snapshot if found, undefined otherwise
+    */
   public getSnapshotById(filePath: string, id: string): FileSnapshot | undefined {
-    const snapshots = this.getSnapshots(filePath);
-    return snapshots.find(snapshot => snapshot.id === id);
+    if (!this.index[filePath] || !this.index[filePath].snapshots[id]) {
+      return undefined; // Metadata not found in index
+    }
+
+    const metadata = this.index[filePath].snapshots[id];
+    try {
+      const contentPath = path.join(this.snapshotDir, `${id}.content`);
+      if (fs.existsSync(contentPath)) {
+        const content = fs.readFileSync(contentPath, 'utf8');
+        return { metadata, content }; // Combine metadata and content
+      } else {
+        this.debug.warn(`Content file not found for snapshot ${id}: ${contentPath}`);
+      }
+    } catch (error) {
+      this.debug.error(`Error loading content for snapshot ${id}: ${error}`);
+    }
+    return undefined; // Content file missing or error reading
   }
 
   /**
     * Get the active snapshot for a file
+    * @param filePath Path to the file
+    * @returns The active snapshot if set and exists, undefined otherwise
     */
   public getActiveSnapshot(filePath: string): FileSnapshot | undefined {
-    if (!this.index[filePath] || !this.index[filePath].activeSnapshot) {
+    const activeSnapshotId = this.index[filePath]?.activeSnapshot;
+
+    if (!activeSnapshotId) {
       return undefined;
     }
 
-    const id = this.index[filePath].activeSnapshot;
+    // Get metadata from the index
+    const metadata = this.index[filePath].snapshots[activeSnapshotId];
+    if (!metadata) {
+      this.debug.warn(`Metadata not found in index for active snapshot ID: ${activeSnapshotId}`);
+      // Clear the invalid active snapshot ID
+      this.index[filePath].activeSnapshot = undefined;
+      this.saveIndex();
+      return undefined;
+    }
+
+    // Get content from the file
     try {
-      const snapshotPath = path.join(this.snapshotDir, `${id}.json`);
-      if (fs.existsSync(snapshotPath)) {
-        return JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+      const contentPath = path.join(this.snapshotDir, `${activeSnapshotId}.content`);
+      if (fs.existsSync(contentPath)) {
+        const content = fs.readFileSync(contentPath, 'utf8');
+        return { metadata, content }; // Combine metadata and content
+      } else {
+        this.debug.warn(`Content file not found for active snapshot ${activeSnapshotId}: ${contentPath}`);
+        // Clear the invalid active snapshot ID as content is missing
+        this.index[filePath].activeSnapshot = undefined;
+        this.saveIndex();
       }
     } catch (error) {
-      this.debug.error(`Error loading active snapshot ${id}: ${error}`);
+      this.debug.error(`Error loading content for active snapshot ${activeSnapshotId}: ${error}`);
     }
 
     return undefined;
@@ -3037,73 +3169,86 @@ class SnapshotManager {
 
   /**
     * Delete a snapshot
+    * @param filePath Path to the file
+    * @param snapshotId ID of the snapshot to delete
     */
-  public deleteSnapshot(filePath: string, snapshotId: string) {
+  public deleteSnapshot(filePath: string, snapshotId: string): void {
     if (!this.index[filePath]) {
       return;
     }
 
-    // Remove from index
-    this.index[filePath].snapshots = this.index[filePath].snapshots.filter(id => id !== snapshotId);
+    // Remove metadata from index
+    if (this.index[filePath].snapshots[snapshotId]) {
+      delete this.index[filePath].snapshots[snapshotId];
+    }
 
     // If this was the active snapshot, clear it
     if (this.index[filePath].activeSnapshot === snapshotId) {
       this.index[filePath].activeSnapshot = undefined;
     }
 
-    // Remove the snapshot file
-    const snapshotPath = path.join(this.snapshotDir, `${snapshotId}.json`);
-    if (fs.existsSync(snapshotPath)) {
-      fs.unlinkSync(snapshotPath);
+    // Remove the content file
+    const contentPath = path.join(this.snapshotDir, `${snapshotId}.content`);
+    if (fs.existsSync(contentPath)) {
+      try {
+        fs.unlinkSync(contentPath);
+      } catch (error) {
+        this.debug.error(`Error deleting content file ${contentPath}: ${error}`);
+      }
+    }
+
+    // If no snapshots remain for this file, remove the file entry from index
+    if (Object.keys(this.index[filePath].snapshots).length === 0) {
+      delete this.index[filePath];
     }
 
     this.saveIndex();
   }
 
   /**
-   * Updates the message for an existing snapshot
-   * @param filePath The path to the file
-   * @param id The ID of the snapshot to update
-   * @param message The new message for the snapshot
-   */
-  updateSnapshotMessage(filePath: string, id: string, message: string): void {
+    * Updates the message for an existing snapshot
+    * @param filePath The path to the file
+    * @param id The ID of the snapshot to update
+    * @param message The new message for the snapshot
+    */
+  public updateSnapshotMessage(filePath: string, id: string, message: string): void {
     try {
-      // Get the snapshot file path
-      const snapshotPath = path.join(this.snapshotDir, `${id}.json`);
-
-      // Check if the snapshot exists
-      if (fs.existsSync(snapshotPath)) {
-        // Read the snapshot file
-        const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
-
+      // Find the metadata in the index
+      if (this.index[filePath] && this.index[filePath].snapshots[id]) {
+        const metadata = this.index[filePath].snapshots[id];
         // Update the message
-        snapshot.message = message;
+        metadata.message = message;
 
-        // Write the updated snapshot back to the file
-        fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), 'utf8');
-
+        // Save the updated index
+        this.saveIndex();
         this.debug.log(`Updated message for snapshot ${id}`);
       } else {
-        this.debug.error(`Snapshot file not found: ${snapshotPath}`);
+        this.debug.error(`Snapshot metadata not found in index for ID: ${id} and file: ${filePath}`);
       }
     } catch (error) {
-      this.debug.error(`Error updating snapshot message: ${error}`);
+      this.debug.error(`Error updating snapshot message in index: ${error}`);
     }
   }
 
   /**
     * Clear all snapshots for a file
+    * @param filePath Path to the file
     */
-  public clearSnapshots(filePath: string) {
+  public clearSnapshots(filePath: string): void {
     if (!this.index[filePath]) {
       return;
     }
 
-    // Delete all snapshot files
-    for (const id of this.index[filePath].snapshots) {
-      const snapshotPath = path.join(this.snapshotDir, `${id}.json`);
-      if (fs.existsSync(snapshotPath)) {
-        fs.unlinkSync(snapshotPath);
+    // Delete all content files associated with this file path
+    const snapshotIds = Object.keys(this.index[filePath].snapshots);
+    for (const id of snapshotIds) {
+      const contentPath = path.join(this.snapshotDir, `${id}.content`);
+      if (fs.existsSync(contentPath)) {
+        try {
+          fs.unlinkSync(contentPath);
+        } catch (error) {
+          this.debug.error(`Error deleting content file ${contentPath}: ${error}`);
+        }
       }
     }
 
