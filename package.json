@@ -2,7 +2,7 @@
   "name": "bitbased-source-tracker",
   "displayName": "Source Tracker",
   "description": "Track code changes against any git reference or snapshots (not just the current branch) with visual indicators that work alongside built-in git features",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "bitbased",
   "author": "Brant Wedel (https://bitbased.net)",
   "engines": {
@@ -80,6 +80,66 @@
         }
       }
     },
+    "configuration": [
+      {
+        "title": "General",
+        "properties": {
+          "sourceTracker.diffDecorations": {
+            "order": 1,
+            "type": "object",
+            "title": "Change Tracking Decorations",
+            "additionalProperties": false,
+            "default": {
+              "gutter": true,
+              "overview": true,
+              "border": false,
+              "background": false,
+              "backgroundModified": false,
+              "treeBadges": true,
+              "treeColor": true
+            },
+            "markdownDescription": "Configure which methods to use for displaying tracked change decorations",
+            "properties": {
+              "gutter": {
+                "type": "boolean",
+                "default": true,
+                "description": "Show markers in the gutter for added, modified, and removed lines"
+              },
+              "overview": {
+                "type": "boolean",
+                "default": true,
+                "description": "Show markers in the scrollbar/overview ruler"
+              },
+              "border": {
+                "type": "boolean",
+                "default": false,
+                "description": "Add colored borders on changed lines"
+              },
+              "background": {
+                "type": "boolean",
+                "default": false,
+                "description": "Highlight added lines with background color"
+              },
+              "backgroundModified": {
+                "type": "boolean",
+                "default": false,
+                "description": "Highlight modified lines with background color"
+              },
+              "treeBadges": {
+                "type": "boolean",
+                "default": true,
+                "description": "Show badges (a/m) in file explorer for added/modified files"
+              },
+              "treeColor": {
+                "type": "boolean",
+                "default": true,
+                "description": "Color the badges in file explorer based on file status"
+              }
+            }
+          }
+        }
+      }
+    ],
     "commands": [
       {
         "command": "sourceTracker.gitTrackingOptions",

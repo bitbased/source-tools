@@ -22,9 +22,92 @@ interface CustomFileDecorationProvider extends vscode.FileDecorationProvider {
   setFiles(files: string[]): void;
 }
 
+interface ConfigValues {
+  outputLevel: string;
+  consoleLevel: string;
+  diffDecorations: {
+    gutter: boolean;
+    overview: boolean;
+    border: boolean;
+    background: boolean;
+    backgroundModified: boolean;
+    treeBadges: boolean;
+    treeColor: boolean;
+  };
+}
+
+class ConfigManager {
+  private config: ConfigValues;
+  private changeListeners: Array<(config: ConfigValues) => void> = [];
+  private configChangeDisposable: vscode.Disposable | undefined;
+
+  constructor(private debug: DebugHandler, private context: vscode.ExtensionContext) {
+    this.config = this.loadConfig();
+    this.setupConfigChangeListener();
+  }
+
+  private loadConfig(): ConfigValues {
+    const generalConfig = vscode.workspace.getConfiguration('sourceTracker');
+    const snapshotsConfig = vscode.workspace.getConfiguration('sourceTracker.snapshots');
+
+    return {
+      outputLevel: this.context ? this.context.globalState.get<string>('sourceTracker.outputLevel', 'error') : 'error',
+      consoleLevel: this.context ? this.context.globalState.get<string>('sourceTracker.consoleLevel', 'error warn') : 'error warn',
+      diffDecorations: {
+        gutter: generalConfig.get<boolean>('diffDecorations.gutter', true),
+        overview: generalConfig.get<boolean>('diffDecorations.overview', true),
+        border: generalConfig.get<boolean>('diffDecorations.border', false),
+        background: generalConfig.get<boolean>('diffDecorations.background', false),
+        backgroundModified: generalConfig.get<boolean>('diffDecorations.backgroundModified', false),
+        treeBadges: generalConfig.get<boolean>('diffDecorations.treeBadges', true),
+        treeColor: generalConfig.get<boolean>('diffDecorations.treeColor', true)
+      }
+    };
+  }
+
+  private setupConfigChangeListener(): void {
+    this.configChangeDisposable = vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('sourceTracker')) {
+        this.debug.log('Configuration changed, updating config values');
+        this.config = this.loadConfig();
+        this.notifyListeners();
+      }
+    });
+  }
+
+  public get(): ConfigValues {
+    return this.config;
+  }
+
+  public onChange(listener: (config: ConfigValues) => void): vscode.Disposable {
+    this.changeListeners.push(listener);
+    return {
+      dispose: () => {
+        const index = this.changeListeners.indexOf(listener);
+        if (index !== -1) {
+          this.changeListeners.splice(index, 1);
+        }
+      }
+    };
+  }
+
+  private notifyListeners(): void {
+    for (const listener of this.changeListeners) {
+      listener(this.config);
+    }
+  }
+
+  public dispose(): void {
+    if (this.configChangeDisposable) {
+      this.configChangeDisposable.dispose();
+    }
+  }
+}
+
 class VirtualGitDiff {
   private baseRef: string;
   private displayOptions: string = 'gutter overview tree-color tree-badges';
+  private configManager: ConfigManager;
   private addedLineDecoration!: vscode.TextEditorDecorationType;
   private createdLineDecoration!: vscode.TextEditorDecorationType;
   private removedLineDecoration!: vscode.TextEditorDecorationType;
@@ -81,13 +164,55 @@ class VirtualGitDiff {
     // Initialize the channel
     this.outputChannel = vscode.window.createOutputChannel('SourceTracker');
 
+    // Initialize the config manager
+    this.configManager = new ConfigManager(this.debug, context);
+
+    // Register for config changes
+    this.context.subscriptions.push(
+      this.configManager.onChange(config => {
+        this.outputLevel = config.outputLevel;
+        this.consoleLevel = config.consoleLevel;
+
+        // Set display options from configuration
+        const decorations = config.diffDecorations;
+        this.displayOptions = [
+          decorations.gutter ? 'gutter' : '',
+          decorations.overview ? 'overview' : '',
+          decorations.border ? 'border' : '',
+          decorations.background ? 'background' : '',
+          decorations.backgroundModified ? 'background-modified' : '',
+          decorations.treeBadges ? 'tree-badges' : '',
+          decorations.treeColor ? 'tree-color' : ''
+        ].filter(Boolean).join(' ');
+
+        // Save display options to workspace state
+        // this.context.workspaceState.update('sourceTracker.displayOptions', this.displayOptions);
+        this.clearDecorations();
+        this.initDecorations();
+        this.updateDecorations();
+        this.scheduleFileExplorerUpdate(true);
+      })
+    );
+
     // Load the persisted base ref from context, or default to empty string
     this.baseRef = this.context.workspaceState.get<string>('sourceTracker.trackingBaseRef', '');
 
-    this.displayOptions = this.context.workspaceState.get<string>('sourceTracker.displayOptions', 'gutter overview tree-color tree-badges');
-    this.outputLevel = this.context.globalState.get<string>('sourceTracker.outputLevel', 'error');
-    this.consoleLevel = this.context.globalState.get<string>('sourceTracker.consoleLevel', 'error warn');
+    // Get initial config values from the config manager
+    const config = this.configManager.get();
+    this.outputLevel = config.outputLevel;
+    this.consoleLevel = config.consoleLevel;
 
+    // Set display options based on the decoration settings
+    const decorations = config.diffDecorations;
+    this.displayOptions = [
+      decorations.gutter ? 'gutter' : '',
+      decorations.overview ? 'overview' : '',
+      decorations.border ? 'border' : '',
+      decorations.background ? 'background' : '',
+      decorations.backgroundModified ? 'background-modified' : '',
+      decorations.treeBadges ? 'tree-badges' : '',
+      decorations.treeColor ? 'tree-color' : ''
+    ].filter(Boolean).join(' ');
 
     // Create the status bar item
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -119,6 +244,12 @@ class VirtualGitDiff {
       this.statusBarUpdateInterval = undefined;
     }
 
+    // Dispose of config manager subscription
+    if (this.configManager) {
+      this.configManager.dispose();
+    }
+
+    // Dispose of status bar item
     this.statusBarItem.dispose();
   }
 
@@ -214,16 +345,17 @@ class VirtualGitDiff {
   }
 
   private initDecorations() {
-    this.displayOptions = this.context.workspaceState.get<string>('sourceTracker.displayOptions', 'gutter overview tree-color tree-badges');
+    // Use config values for display options
+    const decorations = this.configManager.get().diffDecorations;
 
     // Check which display methods to use
-    const useGutterIcons = this.displayOptions.includes('gutter');
-    const useBorder = this.displayOptions.includes('border');
-    const useOverview = this.displayOptions.includes('overview');
-    const useBackground = /\bbackground\b(?!-)/.test(this.displayOptions);
-    const useModifiedBackground = this.displayOptions.includes('background-modified');
-    const useTreeBadges = this.displayOptions.includes('tree-badges');
-    const useTreeColor = this.displayOptions.includes('tree-color');
+    const useGutterIcons = decorations.gutter || this.displayOptions.includes('gutter');
+    const useBorder = decorations.border || this.displayOptions.includes('border');
+    const useOverview = decorations.overview || this.displayOptions.includes('overview');
+    const useBackground = decorations.background || /\bbackground\b(?!-)/.test(this.displayOptions);
+    const useModifiedBackground = decorations.backgroundModified || this.displayOptions.includes('background-modified');
+    const useTreeBadges = decorations.treeBadges || this.displayOptions.includes('tree-badges');
+    const useTreeColor = decorations.treeColor || this.displayOptions.includes('tree-color');
 
     // Create decorations based on selected display methods
     this.removedLineDecoration = vscode.window.createTextEditorDecorationType({
@@ -566,15 +698,22 @@ class VirtualGitDiff {
           // Temporarily apply the new display options
           const originalDisplay = this.displayOptions;
           this.displayOptions = selectedOptions;
-          await this.context.workspaceState.update('sourceTracker.displayOptions', this.displayOptions);
 
-          this.clearDecorations();
-          this.initDecorations();
-          this.updateDecorations();
-          this.scheduleFileExplorerUpdate(true);
+          // Update all decoration settings in the configuration
+          const decorationsConfig = vscode.workspace.getConfiguration('sourceTracker');
 
-          // This is just a preview - we'll only persist on Accept
-          this.debug.log(`Previewing display options: ${selectedOptions}`);
+          const workspaceConfig = vscode.workspace.getConfiguration('sourceTracker', null);
+          const hasWorkspaceDecoration = workspaceConfig.inspect('diffDecorations')?.workspaceValue !== undefined;
+
+          await decorationsConfig.update('diffDecorations', {
+            gutter: selectedOptions.includes('gutter'),
+            overview: selectedOptions.includes('overview'),
+            border: selectedOptions.includes('border'),
+            background: /\bbackground\b(?!-)/.test(selectedOptions),
+            backgroundModified: selectedOptions.includes('background-modified'),
+            treeBadges: selectedOptions.includes('tree-badges'),
+            treeColor: selectedOptions.includes('tree-color')
+          }, hasWorkspaceDecoration ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
         }
       });
 
@@ -587,15 +726,22 @@ class VirtualGitDiff {
         // Update display options if changed
         if (this.displayOptions !== selectedOptions && quickPick.selectedItems.length > 0) {
           this.displayOptions = selectedOptions;
-          await this.context.workspaceState.update('sourceTracker.displayOptions', this.displayOptions);
 
-          this.clearDecorations();
-          // Reinitialize decorations with new display options
-          this.initDecorations();
+          // Update all decoration settings in the configuration
+          const decorationsConfig = vscode.workspace.getConfiguration('sourceTracker');
 
-          // Update decorations for the active editor
-          this.updateDecorations();
-          this.scheduleFileExplorerUpdate(true);
+          const workspaceConfig = vscode.workspace.getConfiguration('sourceTracker', null);
+          const hasWorkspaceDecoration = workspaceConfig.inspect('diffDecorations')?.workspaceValue !== undefined;
+
+          await decorationsConfig.update('diffDecorations', {
+            gutter: selectedOptions.includes('gutter'),
+            overview: selectedOptions.includes('overview'),
+            border: selectedOptions.includes('border'),
+            background: /\bbackground\b(?!-)/.test(selectedOptions),
+            backgroundModified: selectedOptions.includes('background-modified'),
+            treeBadges: selectedOptions.includes('tree-badges'),
+            treeColor: selectedOptions.includes('tree-color')
+          }, hasWorkspaceDecoration ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global);
 
           vscode.window.showInformationMessage(`Change display options updated`);
           this.debug.info(`Updated change display options: ${this.displayOptions}`);
