@@ -47,20 +47,20 @@ class ConfigManager {
   }
 
   private loadConfig(): ConfigValues {
-    const generalConfig = vscode.workspace.getConfiguration('sourceTracker');
+    const displayConfig = vscode.workspace.getConfiguration('sourceTracker.display');
     const snapshotsConfig = vscode.workspace.getConfiguration('sourceTracker.snapshots');
 
     return {
       outputLevel: this.context ? this.context.globalState.get<string>('sourceTracker.outputLevel', 'error') : 'error',
       consoleLevel: this.context ? this.context.globalState.get<string>('sourceTracker.consoleLevel', 'error warn') : 'error warn',
       diffDecorations: {
-        gutter: generalConfig.get<boolean>('diffDecorations.gutter', true),
-        overview: generalConfig.get<boolean>('diffDecorations.overview', true),
-        border: generalConfig.get<boolean>('diffDecorations.border', false),
-        background: generalConfig.get<boolean>('diffDecorations.background', false),
-        backgroundModified: generalConfig.get<boolean>('diffDecorations.backgroundModified', false),
-        treeBadges: generalConfig.get<boolean>('diffDecorations.treeBadges', true),
-        treeColor: generalConfig.get<boolean>('diffDecorations.treeColor', true)
+        gutter: displayConfig.get<boolean>('diffDecorations.gutter', true),
+        overview: displayConfig.get<boolean>('diffDecorations.overview', true),
+        border: displayConfig.get<boolean>('diffDecorations.border', false),
+        background: displayConfig.get<boolean>('diffDecorations.background', false),
+        backgroundModified: displayConfig.get<boolean>('diffDecorations.backgroundModified', false),
+        treeBadges: displayConfig.get<boolean>('diffDecorations.treeBadges', true),
+        treeColor: displayConfig.get<boolean>('diffDecorations.treeColor', true)
       }
     };
   }
@@ -700,9 +700,9 @@ class VirtualGitDiff {
           this.displayOptions = selectedOptions;
 
           // Update all decoration settings in the configuration
-          const decorationsConfig = vscode.workspace.getConfiguration('sourceTracker');
+          const decorationsConfig = vscode.workspace.getConfiguration('sourceTracker.display');
 
-          const workspaceConfig = vscode.workspace.getConfiguration('sourceTracker', null);
+          const workspaceConfig = vscode.workspace.getConfiguration('sourceTracker.display', null);
           const hasWorkspaceDecoration = workspaceConfig.inspect('diffDecorations')?.workspaceValue !== undefined;
 
           await decorationsConfig.update('diffDecorations', {
@@ -728,9 +728,9 @@ class VirtualGitDiff {
           this.displayOptions = selectedOptions;
 
           // Update all decoration settings in the configuration
-          const decorationsConfig = vscode.workspace.getConfiguration('sourceTracker');
+          const decorationsConfig = vscode.workspace.getConfiguration('sourceTracker.display');
 
-          const workspaceConfig = vscode.workspace.getConfiguration('sourceTracker', null);
+          const workspaceConfig = vscode.workspace.getConfiguration('sourceTracker.display', null);
           const hasWorkspaceDecoration = workspaceConfig.inspect('diffDecorations')?.workspaceValue !== undefined;
 
           await decorationsConfig.update('diffDecorations', {

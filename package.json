@@ -82,9 +82,9 @@
     },
     "configuration": [
       {
-        "title": "General",
+        "title": "Display",
         "properties": {
-          "sourceTracker.diffDecorations": {
+          "sourceTracker.display.diffDecorations": {
             "order": 1,
             "type": "object",
             "title": "Change Tracking Decorations",
