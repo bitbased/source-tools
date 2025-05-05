@@ -5,6 +5,24 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as Diff from 'diff';
 
+const ignoredSchemes = [
+  'output',
+  'debug',
+  'walkThrough',
+  'walkThroughSnippet',
+  'search-editor',
+  'vscode-settings',
+  'vscode-notebook',
+  'vscode-notebook-cell',
+  'vscode-userdata',
+  'vscode-custom-editor',
+  'vscode-webview',
+  'vscode-insider',
+  'vscode-terminal',
+  'vscode-interactive-input',
+  'vscode-interactive'
+];
+
 interface DiffRange {
   startLine: number;
   endLine: number;
@@ -25,6 +43,28 @@ interface CustomFileDecorationProvider extends vscode.FileDecorationProvider {
 interface ConfigValues {
   outputLevel: string;
   consoleLevel: string;
+  snapshotStorage: string,
+  snapshotTriggers: {
+    onOpen: string;
+    onSave: string;
+    onDoubleSave: string;
+    beforeApply: string;
+    beforePaste: string;
+    beforeDeletion: string;
+  };
+  snapshotTriggersExclude: string[];
+  snapshotDoubleSaveDelay: number;
+  snapshotDeletionThreshold: number;
+  maxAutoSnapshots: number;
+  maxAutoSnapshotSize: number;
+  defaultEditorMenu: string;
+  displayCustomRefs: string[];
+  displayRecentBranches: number;
+  displayRecentCommits: number;
+  displayRecentSnapshots: number;
+  displayCommitTemplate: string;
+  displaySnapshotTemplate: string;
+  diffDecorationsGutterWidth: number;
   diffDecorations: {
     gutter: boolean;
     overview: boolean;
@@ -53,6 +93,34 @@ class ConfigManager {
     return {
       outputLevel: this.context ? this.context.globalState.get<string>('sourceTracker.outputLevel', 'error') : 'error',
       consoleLevel: this.context ? this.context.globalState.get<string>('sourceTracker.consoleLevel', 'error warn') : 'error warn',
+      snapshotStorage: snapshotsConfig.get<string>('storage', 'folder'),
+      snapshotTriggers: {
+        onOpen: snapshotsConfig.get<string>('triggers.onOpen', 'off'),
+        onSave: snapshotsConfig.get<string>('triggers.onSave', 'off'),
+        onDoubleSave: snapshotsConfig.get<string>('triggers.onDoubleSave', 'off'),
+        beforeApply: snapshotsConfig.get<string>('triggers.beforeApply', 'auto'),
+        beforePaste: snapshotsConfig.get<string>('triggers.beforePaste', 'off'),
+        beforeDeletion: snapshotsConfig.get<string>('triggers.beforeDeletion', 'off')
+      },
+      snapshotTriggersExclude: snapshotsConfig.get<string[]>('triggersExclude', []),
+      snapshotDoubleSaveDelay: snapshotsConfig.get<number>('doubleSaveDelay', 300),
+      snapshotDeletionThreshold: snapshotsConfig.get<number>('deletionThreshold', 1),
+      maxAutoSnapshots: snapshotsConfig.get<number>('maxAutoSnapshots', 10),
+      maxAutoSnapshotSize: snapshotsConfig.get<number>('maxAutoSnapshotSize', 256),
+      defaultEditorMenu: displayConfig.get<string>('defaultEditorMenu', 'auto'),
+      displayCustomRefs: displayConfig.get<string[]>('customRefs', [
+        "BRANCH Merge-base of current branch",
+        "HEAD Current checked out commit",
+        "HEAD~1 Previous commit",
+        "develop Develop branch",
+        "master|main Main branch"
+      ]),
+      displayRecentBranches: displayConfig.get<number>('recentBranches', 5),
+      displayRecentCommits: displayConfig.get<number>('recentCommits', 5),
+      displayRecentSnapshots: displayConfig.get<number>('recentSnapshots', 10),
+      diffDecorationsGutterWidth: displayConfig.get<number>('diffDecorationsGutterWidth', 3),
+      displayCommitTemplate: displayConfig.get<string>('commitTemplate', '${hashShort} ${authorDateAgo} - ${subject...}'),
+      displaySnapshotTemplate: displayConfig.get<string>('snapshotTemplate', '${snapshotDateAgo} ${message...}'),
       diffDecorations: {
         gutter: displayConfig.get<boolean>('diffDecorations.gutter', true),
         overview: displayConfig.get<boolean>('diffDecorations.overview', true),
@@ -104,6 +172,7 @@ class ConfigManager {
   }
 }
 
+
 class VirtualGitDiff {
   private baseRef: string;
   private displayOptions: string = 'gutter overview tree-color tree-badges';
@@ -118,51 +187,155 @@ class VirtualGitDiff {
   private statusBarUpdateInterval: NodeJS.Timeout | undefined;
   private snapshotManager?: SnapshotManager;
   private statusBarItem: vscode.StatusBarItem;
+  private lastSavedFile?: string;
+  private lastSavedTime?: number;
+  private previousFilePath?: string;
+  private previousText?: string;
   public outputLevel: string = "error"; // error, log, warn, info
   public consoleLevel: string = "error warn"; // error, log, warn, info
 
+  // ANSI color codes for OutputChannel coloring
+  // private static ansiColors = {
+  //   log: '\u001b[37m',      // White        // #ffffff
+  //   warn: '\u001b[33m',     // Yellow       // #ffff00
+  //   error: '\u001b[31m',    // Red          // #ff0000
+  //   info: '\u001b[36m',     // Cyan         // #00ffff
+  //   strings: '\u001b[31m',  // Red          // #ce9178
+  //   numbers: '\u001b[33m',  // Yellow       // #b5cea8
+  //   symbols: '\u001b[34m',  // Blue         // #569cd6
+  //   comments: '\u001b[32m', // Green        // #6a9955
+  //   objects: '\u001b[90m',  // Bright Black // #999999
+  //   reset: '\u001b[0m'
+  // };
+  private static ansiColors = {
+    log: '',      // White        // #ffffff
+    warn: '',     // Yellow       // #ffff00
+    error: '',    // Red          // #ff0000
+    info: '',     // Cyan         // #00ffff
+    strings: '',  // Red          // #ce9178
+    numbers: '',  // Yellow       // #b5cea8
+    symbols: '',  // Blue         // #569cd6
+    comments: '', // Green        // #6a9955
+    objects: '',  // Bright Black // #999999
+    reset: ''
+  }
+
   // Create an output channel for logging
-  private outputChannel: vscode.OutputChannel;
+  private outputChannel: vscode.LogOutputChannel;
+
+  /**
+  * Formats and colors debug arguments for output/logging.
+  * Strings are quoted, objects/arrays are pretty-printed, and primitive types are colored.
+  */
+  private formatDebugArgs(args: any[]): string {
+    const MAX_LEN = 128;
+    function ellipsis(str: string, colorStart: string, colorReset: string): string {
+      // If string is longer than MAX_LEN, truncate and add ellipsis before reset code
+      if (str.length > MAX_LEN) {
+        // Remove color codes for length check, but keep them in output
+        // Here, str starts with colorStart and ends with colorReset
+        const prefixLen = colorStart.length;
+        const suffixLen = colorReset.length;
+        const visibleLen = str.length - prefixLen - suffixLen;
+        if (visibleLen > MAX_LEN) {
+          // Truncate only the visible content
+          const content = str.slice(prefixLen, str.length - suffixLen);
+          return colorStart + content.slice(0, MAX_LEN - 1) + '…' + colorReset;
+        }
+      }
+      return str;
+    }
+    return args
+      .map(arg => {
+        if (typeof arg === 'string') {
+          const colored = `${VirtualGitDiff.ansiColors.strings}"${arg}"${VirtualGitDiff.ansiColors.reset}`;
+          return ellipsis(colored, VirtualGitDiff.ansiColors.strings, VirtualGitDiff.ansiColors.reset);
+        } else if (typeof arg === 'number') {
+          const colored = `${VirtualGitDiff.ansiColors.numbers}${arg}${VirtualGitDiff.ansiColors.reset}`;
+          return ellipsis(colored, VirtualGitDiff.ansiColors.numbers, VirtualGitDiff.ansiColors.reset);
+        } else if (typeof arg === 'boolean') {
+          const colored = `${VirtualGitDiff.ansiColors.symbols}${arg}${VirtualGitDiff.ansiColors.reset}`;
+          return ellipsis(colored, VirtualGitDiff.ansiColors.symbols, VirtualGitDiff.ansiColors.reset);
+        } else if (arg === undefined) {
+          const colored = `${VirtualGitDiff.ansiColors.symbols}undefined${VirtualGitDiff.ansiColors.reset}`;
+          return ellipsis(colored, VirtualGitDiff.ansiColors.symbols, VirtualGitDiff.ansiColors.reset);
+        } else if (arg === null) {
+          // Red for null
+          const colored = `${VirtualGitDiff.ansiColors.symbols}null${VirtualGitDiff.ansiColors.reset}`;
+          return ellipsis(colored, VirtualGitDiff.ansiColors.symbols, VirtualGitDiff.ansiColors.reset);
+        } else if (typeof arg === 'object') {
+          // Pretty print objects/arrays
+          try {
+            const pretty = JSON.stringify(arg, null, 2);
+            const colored = VirtualGitDiff.ansiColors.log + pretty + VirtualGitDiff.ansiColors.reset;
+            return ellipsis(colored, VirtualGitDiff.ansiColors.log, VirtualGitDiff.ansiColors.reset);
+          } catch {
+            return '[object]';
+          }
+        }
+        // Fallback: just toString
+        return ellipsis(String(arg), '', '');
+      })
+      .join(' ');
+  }
 
   // Debug methods
   private debug = {
     log: (message: string, ...args: any[]) => {
       if (this.consoleLevel.includes('log')) {
-          console.log(`[SourceTracker] ${message}`, ...args);
+        console.log(`[SourceTracker] ${message}`, ...args);
       }
       if (this.outputLevel.includes('log')) {
-          this.outputChannel.appendLine(`[LOG] ${message} ${args.length ? JSON.stringify(args) : ''}`);
+        this.outputChannel.debug(
+          `${message}${args.length ? ' ' + this.formatDebugArgs(args) : ''}`
+        );
+      }
+    },
+    trace: (message: string, ...args: any[]) => {
+      if (this.consoleLevel.includes('trace')) {
+        console.trace(`[SourceTracker] ${message}`, ...args);
+      }
+      if (this.outputLevel.includes('trace')) {
+        this.outputChannel.trace(
+          `${message}${args.length ? ' ' + this.formatDebugArgs(args) : ''}`
+        );
       }
     },
     warn: (message: string, ...args: any[]) => {
       if (this.consoleLevel.includes('warn')) {
-          console.warn(`[SourceTracker] ${message}`, ...args);
+        console.warn(`[SourceTracker] ${message}`, ...args);
       }
       if (this.outputLevel.includes('warn')) {
-          this.outputChannel.appendLine(`[WARN] ${message} ${args.length ? JSON.stringify(args) : ''}`);
+        this.outputChannel.warn(
+          `${message}${args.length ? ' ' + this.formatDebugArgs(args) : ''}`
+        );
       }
     },
     error: (message: string, ...args: any[]) => {
       if (this.consoleLevel.includes('error')) {
-          console.error(`[SourceTracker] ${message}`, ...args);
+        console.error(`[SourceTracker] ${message}`, ...args);
       }
       if (this.outputLevel.includes('error')) {
-          this.outputChannel.appendLine(`[ERROR] ${message} ${args.length ? JSON.stringify(args) : ''}`);
+        this.outputChannel.error(
+          `${message}${args.length ? ' ' + this.formatDebugArgs(args) : ''}`
+        );
       }
     },
     info: (message: string, ...args: any[]) => {
       if (this.consoleLevel.includes('info')) {
-          console.info(`[SourceTracker] ${message}`, ...args);
+        console.info(`[SourceTracker] ${message}`, ...args);
       }
       if (this.outputLevel.includes('info')) {
-          this.outputChannel.appendLine(`[INFO] ${message} ${args.length ? JSON.stringify(args) : ''}`);
+        this.outputChannel.info(
+          `${message}${args.length ? ' ' + this.formatDebugArgs(args) : ''}`
+        );
       }
     }
   };
 
   constructor(private context: vscode.ExtensionContext) {
     // Initialize the channel
-    this.outputChannel = vscode.window.createOutputChannel('SourceTracker');
+    this.outputChannel = vscode.window.createOutputChannel('SourceTracker', { log: true });
 
     // Initialize the config manager
     this.configManager = new ConfigManager(this.debug, context);
@@ -196,6 +369,10 @@ class VirtualGitDiff {
 
     // Load the persisted base ref from context, or default to empty string
     this.baseRef = this.context.workspaceState.get<string>('sourceTracker.trackingBaseRef', '');
+
+    // this.displayOptions = this.context.workspaceState.get<string>('sourceTracker.displayOptions', 'gutter overview tree-color tree-badges');
+    // this.outputLevel = this.context.globalState.get<string>('sourceTracker.outputLevel', 'error');
+    // this.consoleLevel = this.context.globalState.get<string>('sourceTracker.consoleLevel', 'error warn');
 
     // Get initial config values from the config manager
     const config = this.configManager.get();
@@ -589,10 +766,11 @@ class VirtualGitDiff {
       vscode.commands.registerCommand('sourceTracker.openChangedFiles', (force) => this.openChangedFiles(force)),
       vscode.commands.registerCommand('sourceTracker.openTrackedFiles', (force) => this.openTrackedFiles(force)),
       vscode.workspace.onDidChangeTextDocument(e => this.handleDocChange(e)),
+      vscode.window.onDidChangeTextEditorSelection(e => this.handleSelectionChange(e)),
       vscode.workspace.onDidSaveTextDocument(() => this.scheduleFileExplorerUpdate()),
+      vscode.workspace.onDidSaveTextDocument((document) => this.handleDocumentSave(document)),
       vscode.window.onDidChangeActiveTextEditor(editor => this.handleActiveEditorChange(editor))
     );
-
     // Register the file decoration providers
     this.context.subscriptions.push(
       vscode.window.registerFileDecorationProvider(this.addedFileDecoration),
@@ -618,6 +796,72 @@ class VirtualGitDiff {
     }, 500);
   }
 
+  private async handleDocumentSave(document: vscode.TextDocument): Promise<void> {
+    const currentTime = Date.now();
+    const filePath = document.uri.fsPath;
+
+    // Get snapshot trigger settings from configuration
+    const config = vscode.workspace.getConfiguration('sourceTracker.snapshots');
+    const singleSaveTrigger = config.get<string>('triggers.onSave', 'off').replace('off','');
+    const doubleSaveTrigger = config.get<string>('triggers.onDoubleSave', 'off').replace('off', '');
+    const maxAutoSnapshots = config.get<number>('maxAutoSnapshots', 10);
+
+    // Check if we need to take a snapshot - either on single save or double save
+    const isDoubleSave = this.lastSavedFile === filePath &&
+                        this.lastSavedTime &&
+                        (currentTime - this.lastSavedTime) < 300;
+
+    if ((singleSaveTrigger && !isDoubleSave) || (doubleSaveTrigger && isDoubleSave)) {
+
+      // Double save detected, create a snapshot
+      if (this.snapshotManager) {
+        const content = document.getText();
+
+        // Check if the active snapshot has the same content
+        const activeSnapshot = this.snapshotManager.getActiveSnapshot(filePath);
+        if (activeSnapshot && activeSnapshot.content === content) {
+          this.debug.log(`Skipping snapshot creation - content unchanged from active snapshot`);
+          vscode.window.showInformationMessage(`Snapshot unchanged for ${path.basename(filePath)}`);
+          return;
+        }
+
+        const now = new Date();
+        const formattedDate = now.toLocaleDateString();
+        const formattedTime = now.toLocaleTimeString();
+
+        const triggerType = isDoubleSave ? "double-save" : "single-save";
+
+        // Always fetch git metadata for the snapshot
+        const metadata = await this.getGitMetadata(filePath);
+        const snapshotId = this.snapshotManager.takeSnapshot(
+          filePath,
+          content,
+          `* Auto-snapshot (${triggerType}, ${formattedDate} ${formattedTime})`,
+          metadata
+        );
+
+        if (
+          (isDoubleSave && doubleSaveTrigger === 'activate') ||
+          (!isDoubleSave && singleSaveTrigger === 'activate') ||
+          (!activeSnapshot || (activeSnapshot?.metadata?.message?.startsWith('*')) && ((isDoubleSave && doubleSaveTrigger === 'auto') || (!isDoubleSave && singleSaveTrigger === 'auto')))
+        ) {
+          this.snapshotManager.setActiveSnapshot(filePath, snapshotId);
+        }
+
+        this.debug.info(`Auto-created snapshot for ${triggerType} of file: ${filePath}`);
+        vscode.window.showInformationMessage(`Snapshot created for ${path.basename(filePath)} (${triggerType})`);
+
+        // Update decorations to reflect changes
+        this.updateDecorations();
+        this.updateActiveEditorContext();
+      }
+    }
+
+    // Update tracking variables
+    this.lastSavedFile = filePath;
+    this.lastSavedTime = currentTime;
+  }
+
   private async selectDisplayOptions(forceDisplayOptions: string|undefined = undefined) {
     this.debug.log('selectDisplayOptions called.');
 
@@ -634,12 +878,6 @@ class VirtualGitDiff {
     }
     // Define display options
     const displayOptions = [
-      {
-        label: 'Gutter',
-        detail: 'Show icons in the gutter for added, modified, and removed lines',
-        picked: this.displayOptions.includes('gutter'),
-        value: 'gutter'
-      },
       {
         label: 'Overview',
         detail: 'Show markers in the scrollbar/overview ruler',
@@ -1392,6 +1630,16 @@ class VirtualGitDiff {
       // Get content from the current editor
       const content = editor.document.getText();
 
+      // // Check for max snapshots limit
+      // if (maxSnapshots > 0) {
+      //   const snapshots = this.snapshotManager.getSnapshots(filePath);
+      //   if (snapshots.length >= maxSnapshots) {
+      //     // Trim the oldest snapshots
+      //     this.debug.log(`Max snapshots reached (${maxSnapshots}), removing oldest snapshots`);
+      //     this.snapshotManager.trimSnapshots(filePath, maxSnapshots - 1);
+      //   }
+      // }
+
       // Use the correct method: takeSnapshot
 
       const metadata = await this.getGitMetadata(filePath);
@@ -1431,7 +1679,175 @@ class VirtualGitDiff {
     }
   }
 
+  /**
+   * Handles text editor selection changes to detect large text additions or deletions
+   * @param e The SelectionChangeEvent
+   */
+  private async handleSelectionChange(e: vscode.TextEditorSelectionChangeEvent) {
+    const editor = e.textEditor;
+
+    // Ignore events from documents with ignored schemes
+    if (ignoredSchemes.includes(editor?.document?.uri?.scheme)) {
+      return;
+    }
+
+    if (!editor || editor.document.uri.scheme !== 'file') {
+      return;
+    }
+
+    // Get current document text
+    const currentText = editor.document.getText();
+    const filePath = editor.document.uri.fsPath;
+
+    // Store current text for next comparison
+    this.previousText = currentText;
+    this.previousFilePath = filePath;
+  }
+
   private handleDocChange(event: vscode.TextDocumentChangeEvent) {
+    // Ignore events from documents with ignored schemes
+    if (ignoredSchemes.includes(event.document.uri.scheme)) {
+      return;
+    }
+
+    // ------------------------------------------------------------------
+    //  Detect large paste / deletion operations and create snapshots
+    // ------------------------------------------------------------------
+    if (event.reason) {
+      this.previousText = event.document.getText();
+      this.previousFilePath = event.document.uri.fsPath;
+      return;
+    }
+
+    // Make sure the document is the same as the previous one
+    if (this.previousFilePath && event.document.uri.fsPath !== this.previousFilePath) {
+      // Update previous references and exit early
+      this.previousText = event.document.getText();
+      this.previousFilePath = event.document.uri.fsPath;
+      return;
+    }
+
+    // --------------------------------------------------------------
+    //  Ignore trivial edits (whitespace‑only or single‑character)
+    // --------------------------------------------------------------
+    const isWhitespaceOnlyChange = event.contentChanges.every(change =>
+      change.text.trim().length === 0 && change.rangeLength === 0
+    );
+
+    // Detect multi‑cursor typing where each cursor inserts a single character
+    // Detect single‑character edits (normal typing)
+    const isSingleCharacterChange =
+      event.contentChanges.length === 1 &&
+      event.contentChanges[0].text.length === 1 &&
+      event.contentChanges[0].rangeLength <= 1;
+
+    const isMultiCursorSingleCharacterChange =
+      event.contentChanges.length > 1 &&
+      event.contentChanges.every(
+        change => change.text.length === 1 && change.rangeLength <= 1
+      );
+
+    if (
+      isWhitespaceOnlyChange ||
+      isSingleCharacterChange ||
+      isMultiCursorSingleCharacterChange
+    ) {
+      // Keep previous text references in sync then exit early
+      this.previousText     = event.document.getText();
+      this.previousFilePath = event.document.uri.fsPath;
+      return;
+    }
+
+    const document = event.document;
+
+    // Only track real file‑system files
+    if (document.uri.scheme !== 'file') {
+      return;
+    }
+
+    const filePath = document.uri.fsPath;
+
+    // Aggregate character / line additions & removals coming with this change
+    let addedChars = 0;
+    let removedChars = 0;
+    let addedLines = 0;
+    let removedLines = 0;
+
+    for (const change of event.contentChanges) {
+      addedChars   += change.text.length;
+      removedChars += change.rangeLength;
+
+      addedLines   += (change.text.split('\n').length - 1);
+      removedLines += (change.range.end.line - change.range.start.line);
+    }
+
+    const netCharChange = addedChars - removedChars;
+
+    // Thresholds (could be configurable in the future)
+    const significantChangeThreshold = 10;
+    const significantLineThreshold   = 2;
+
+    const { beforePaste: beforePasteTrigger, beforeDeletion: beforeDeleteTrigger } =
+      this.configManager.get().snapshotTriggers;
+
+    // If both triggers are disabled, simply keep previous text up‑to‑date and exit
+    if (!beforePasteTrigger.replace('off', '') && !beforeDeleteTrigger.replace('off', '')) {
+      this.previousText     = document.getText();
+      this.previousFilePath = filePath;
+      return;
+    }
+
+    const wasDeletion = (removedChars >= significantChangeThreshold || removedLines >= significantLineThreshold)
+                        && netCharChange < 0;
+    const wasPaste    = (addedChars   >= significantChangeThreshold || addedLines   >= significantLineThreshold)
+                        && netCharChange > 0;
+
+    const currentSnapshot = this.snapshotManager?.getActiveSnapshot(filePath);
+
+    const createSnapshot = async (
+      triggerType: 'deletion' | 'paste',
+      triggerSetting: string
+    ) => {
+      if (!this.snapshotManager || !this.previousText) { return; }
+
+      const now            = new Date();
+      const formattedDate  = now.toLocaleDateString();
+      const formattedTime  = now.toLocaleTimeString();
+      const metadata       = await this.getGitMetadata(filePath);
+      const snapshotId     = this.snapshotManager.takeSnapshot(
+        filePath,
+        this.previousText,
+        `* Auto-snapshot (before ${triggerType}, ${formattedDate} ${formattedTime})`,
+        metadata
+      );
+
+      // Activate snapshot depending on trigger configuration
+      if (triggerSetting === 'activate' ||
+          (triggerSetting === 'auto' &&
+            (!currentSnapshot || currentSnapshot.metadata.message?.startsWith('*')))) {
+        this.snapshotManager.setActiveSnapshot(filePath, snapshotId);
+      }
+
+      this.debug.info(`Created snapshot before large ${triggerType}: ${filePath}`);
+      vscode.window.showInformationMessage(
+        `Snapshot created before ${triggerType} for ${path.basename(filePath)}`
+      );
+
+      // Refresh decorations & context
+      this.updateDecorations();
+      this.updateActiveEditorContext();
+    };
+
+    if (wasPaste && beforePasteTrigger.replace('off', '')) {
+      createSnapshot('paste', beforePasteTrigger);
+    } else if (wasDeletion && beforeDeleteTrigger.replace('off', '')) {
+      createSnapshot('deletion', beforeDeleteTrigger);
+    }
+
+    // Store current text for next comparison
+    this.previousText     = document.getText();
+    this.previousFilePath = filePath;
+
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor && event.document === activeEditor.document) {
       // Skip non-file editors (output, terminal, webview, etc.)
@@ -2904,9 +3320,10 @@ interface CommitMetadata {
 }
 
 // Define interface for snapshot metadata
+// The id and filePath are not stored in the index, but are reconstructed when returned from APIs.
 interface SnapshotMetadata extends Partial<CommitMetadata> {
-  id?: string;                 // Unique identifier for the snapshot
-  filePath?: string;           // Path to the file relative to workspace
+  id?: string;                 // Unique identifier for the snapshot (reconstructed, not stored)
+  filePath?: string;           // Path to the file relative to workspace (reconstructed, not stored)
   message?: string;            // User-provided description
   timestamp?: number;          // When the snapshot was taken
 }
@@ -2917,6 +3334,7 @@ interface FileSnapshot {
   content: string;            // The file content at snapshot time
 }
 
+// there is alot of duplication in the SnapshotIndex format? ex, the filePath and id are twice, can we refactor ... maybe we dont need to store the id or filePath in saved metadata!!!
 // Interface for the snapshot index structure
 interface SnapshotIndex {
   [filePath: string]: {
@@ -3026,10 +3444,8 @@ class SnapshotManager {
     // Generate unique ID for this snapshot
     const id = `${path.basename(filePath)}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-    // Create the metadata object
+    // Create the metadata object (don't redundantly store id or filePath)
     const snapshotMetadata: SnapshotMetadata = {
-      id,
-      filePath,
       message,
       timestamp: Date.now(),
       ...metadata // Spread additional metadata if provided
@@ -3064,7 +3480,12 @@ class SnapshotManager {
     const fileSnapshots = this.index[filePath].snapshots;
 
     for (const id in fileSnapshots) {
-      const metadata = fileSnapshots[id];
+      // Reconstruct id and filePath on the fly in returned metadata
+      const metadata: SnapshotMetadata = {
+        ...fileSnapshots[id],
+        id,
+        filePath
+      };
       try {
         const contentPath = path.join(this.snapshotDir, `${id}.content`);
         if (fs.existsSync(contentPath)) {
@@ -3111,7 +3532,13 @@ class SnapshotManager {
       return undefined; // Metadata not found in index
     }
 
-    const metadata = this.index[filePath].snapshots[id];
+    const baseMetadata = this.index[filePath].snapshots[id];
+    // Reconstruct id and filePath on the fly
+    const metadata: SnapshotMetadata = {
+      ...baseMetadata,
+      id,
+      filePath
+    };
     try {
       const contentPath = path.join(this.snapshotDir, `${id}.content`);
       if (fs.existsSync(contentPath)) {
@@ -3124,6 +3551,7 @@ class SnapshotManager {
       this.debug.error(`Error loading content for snapshot ${id}: ${error}`);
     }
     return undefined; // Content file missing or error reading
+
   }
 
   /**
@@ -3139,14 +3567,21 @@ class SnapshotManager {
     }
 
     // Get metadata from the index
-    const metadata = this.index[filePath].snapshots[activeSnapshotId];
-    if (!metadata) {
+    const baseMetadata = this.index[filePath].snapshots[activeSnapshotId];
+    if (!baseMetadata) {
       this.debug.warn(`Metadata not found in index for active snapshot ID: ${activeSnapshotId}`);
       // Clear the invalid active snapshot ID
       this.index[filePath].activeSnapshot = undefined;
       this.saveIndex();
       return undefined;
     }
+
+    // Reconstruct id and filePath on the fly
+    const metadata: SnapshotMetadata = {
+      ...baseMetadata,
+      id: activeSnapshotId,
+      filePath
+    };
 
     // Get content from the file
     try {
@@ -3165,6 +3600,7 @@ class SnapshotManager {
     }
 
     return undefined;
+
   }
 
   /**

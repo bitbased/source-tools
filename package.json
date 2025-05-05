@@ -2,11 +2,11 @@
   "name": "bitbased-source-tracker",
   "displayName": "Source Tracker",
   "description": "Track code changes against any git reference or snapshots (not just the current branch) with visual indicators that work alongside built-in git features",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "bitbased",
   "author": "Brant Wedel (https://bitbased.net)",
   "engines": {
-    "vscode": "^1.50.0"
+    "vscode": "^1.99.1"
   },
   "icon": "resources/icon.png",
   "categories": [
@@ -136,6 +136,229 @@
                 "description": "Color the badges in file explorer based on file status"
               }
             }
+          },
+          "sourceTracker.display.diffDecorationsGutterWidth": {
+            "order": 2,
+            "type": "integer",
+            "enum": [1, 2, 3, 4, 5],
+            "default": 3,
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Controls the width(px) of diff decorations in gutter (added & modified)."
+          },
+          "sourceTracker.display.defaultEditorMenu": {
+            "order": 3,
+            "type": "string",
+            "enum": ["git", "snapshot", "auto"],
+            "enumItemLabels": ["Git Tracking", "Snapshot Tracking", "Auto"],
+            "enumDescriptions": [
+              "Show Git Tracking menu by default",
+              "Show Snapshot Tracking menu by default",
+              "Automatically switch between Git and Snapshot tracking menus"
+            ],
+            "default": "auto",
+            "description": "Default menu to show for the editor icon (Git Tracking, Snapshot Tracking, or Auto)"
+          },
+          "sourceTracker.display.customRefs": {
+            "order": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "<ref> <description>"
+            },
+            "default": [
+              "BRANCH Merge-base of current branch",
+              "HEAD Current checked out commit",
+              "HEAD~1 Previous commit",
+              "develop Develop branch",
+              "master|main Main branch"
+            ],
+            "markdownDescription": "List of custom branches, hashes, or other git refs to display in menus. Format: `<ref> <description>` where the description follows a space after the ref (e.g., `develop My develop branch`). Use pipe character (`|`) for fallbacks, (e.g., `master|main Main branch`) to try alternatives if first ref doesn't exist.",
+            "description": "List of branches, hashes, or other git refs to display in menus"
+          },
+          "sourceTracker.display.recentBranches": {
+            "order": 5,
+            "type": "integer",
+            "enum": [0, 5, 10, 15, 20, 25],
+            "enumItemLabels": ["0 = none", "", "", "", "", ""],
+            "default": 5,
+            "minimum": 0,
+            "maximum": 50,
+            "description": "Number of branches to display in menus"
+          },
+          "sourceTracker.display.recentCommits": {
+            "order": 6,
+            "type": "integer",
+            "enum": [0, 5, 10, 15, 20, 25],
+            "enumItemLabels": ["0 = none", "", "", "", "", ""],
+            "default": 5,
+            "minimum": 3,
+            "maximum": 50,
+            "description": "Number of commits to display in menus"
+          },
+          "sourceTracker.display.recentSnapshots": {
+            "order": 7,
+            "type": "integer",
+            "enum": [5, 10, 15, 20, 25],
+            "default": 5,
+            "minimum": 3,
+            "maximum": 50,
+            "description": "Number of snapshots to display in menus"
+          },
+          "sourceTracker.display.commitTemplate": {
+            "order": 8,
+            "type": "string",
+            "default": "${hashShort} ${authorDateAgo} - ${subject...}",
+            "markdownDescription": "Template for commit display in menus. **Supported variables:**\n\n- `${hash}`: Commit hash\n- `${hashShort}`: Short commit hash\n- `${subject}`: First line of the commit message\n- `${authorName}`: Author name\n- `${authorEmail}`: Author email\n- `${authorDate}`: Author date\n- `${authorDateAgo}`: Time difference between now and the author date\n- `${branch}`: Commit source branch"
+          },
+          "sourceTracker.display.snapshotTemplate": {
+            "order": 9,
+            "type": "string",
+            "default": "${snapshotDateAgo} ${message...}",
+            "markdownDescription": "Template for snapshot display in menus. **Supported variables:**\n\n- `${message}`: Snapshot message\n- `${snapshotDate}`: Snapshot creation date\n- `${snapshotDateAgo}`: Time difference between now and snapshot creation\n\n**Commit variables** (git commit state at snapshot creation):\n- `${commitHash}`: Commit hash\n- `${commitHashShort}`: Short commit hash\n- `${commitSubject}`: First line of the commit message\n- `${commitAuthorName}`: Author name\n- `${commitAuthorEmail}`: Author email\n- `${commitAuthorDate}`: Author date\n- `${commitAuthorDateAgo}`: Time difference for commit date\n- `${commitBranch}`: Source branch"
+          }
+        }
+      },
+      {
+        "title": "Snapshots",
+        "properties": {
+          "sourceTracker.snapshots.storage": {
+            "order": 1,
+            "type": "string",
+            "enum": ["folder", "workspace", "global"],
+            "default": "folder",
+            "enumDescriptions": [
+              "Store snapshots in a `.vscode/snapshots` folder at the root of the workspace.",
+              "Store snapshots in the workspace storage location (vscode internal).",
+              "Store and access all snapshots globally (across all workspaces, stored in the extension's global storage)."
+            ],
+            "markdownDescription": "Choose where to store snapshots:\n- **folder**: in `.vscode/snapshots` at the project root\n- **workspace**: in VS Code’s internal workspace storage (not visible in project files)\n- **global**: in the extension’s global storage, shared across all workspaces"
+          },
+          "sourceTracker.snapshots.triggers": {
+            "order": 2,
+            "type": "object",
+            "additionalProperties": false,
+            "markdownDescription": "Configure when automatic snapshots should be created.",
+            "default": {
+              "onOpen": "off",
+              "onSave": "off",
+              "onDoubleSave": "off",
+              "beforeApply": "auto",
+              "beforePaste": "off",
+              "beforeDeletion": "off"
+            },
+            "properties": {
+              "onOpen": {
+                "type": "string",
+                "enum": ["off", "snapshot", "activate", "auto"],
+                "default": "off",
+                "description": "Create snapshot on file open",
+                "enumDescriptions": [
+                  "Do not create snapshots on open",
+                  "Create snapshots on open",
+                  "Create snapshot and activate it on open",
+                  "Create snapshot and activate it if none active"
+                ]
+              },
+              "onSave": {
+                "type": "string",
+                "enum": ["off", "snapshot", "activate", "auto"],
+                "default": "off",
+                "description": "Create snapshot on file save",
+                "enumDescriptions": [
+                  "Do not create snapshots on save",
+                  "Create snapshots on save",
+                  "Create snapshot and activate it on save",
+                  "Create snapshot and activate it if none active"
+                ]
+              },
+              "onDoubleSave": {
+                "type": "string",
+                "enum": ["off", "snapshot", "activate", "auto"],
+                "default": "off",
+                "description": "Create snapshot on double save (two saves in quick succession)",
+                "enumDescriptions": [
+                  "Do not create snapshots on double save",
+                  "Create snapshots on double save",
+                  "Create snapshot and activate it on double save",
+                  "Create snapshot and activate it if none active"
+                ]
+              },
+              "beforeApply": {
+                "type": "string",
+                "enum": ["off", "snapshot", "activate", "auto"],
+                "default": "auto",
+                "description": "Create snapshot before applying (reverting to) a previous snapshot",
+                "enumDescriptions": [
+                  "Do not create snapshots before applying",
+                  "Create snapshots before applying",
+                  "Create snapshot and activate it when applying",
+                  "Create snapshot and activate it if none active"
+                ]
+              },
+              "beforePaste": {
+                "type": "string",
+                "enum": ["off", "snapshot", "activate", "auto"],
+                "default": "off",
+                "description": "Create snapshot before pasting content",
+                "enumDescriptions": [
+                  "Do not create snapshots before pasting",
+                  "Create snapshots before pasting",
+                  "Create snapshot and activate it before pasting",
+                  "Create snapshot and activate it if none active"
+                ]
+              },
+              "beforeDeletion": {
+                "type": "string",
+                "enum": ["off", "snapshot", "activate", "auto"],
+                "default": "off",
+                "description": "Create snapshot before large deletions (see deletionThreshold)",
+                "enumDescriptions": [
+                  "Do not create snapshots before deletion",
+                  "Create snapshots before deletion",
+                  "Create snapshot and activate it before deletion",
+                  "Create snapshot and activate it if none active"
+                ]
+              }
+            }
+          },
+          "sourceTracker.snapshots.doubleSaveDelay": {
+            "order": 3,
+            "type": "integer",
+            "default": 300,
+            "description": "Delay in milliseconds for double save detection"
+          },
+          "sourceTracker.snapshots.deletionThreshold": {
+            "order": 4,
+            "type": "integer",
+            "default": 1,
+            "description": "Number of lines that must be deleted to trigger a 'beforeDeletion' snapshot"
+          },
+          "sourceTracker.snapshots.maxAutoSnapshots": {
+            "order": 5,
+            "type": "integer",
+            "minimum": 0,
+            "enum": [0, 5, 10, 15, 20, 25],
+            "enumItemLabels": ["0 = unlimited", "", "", "", "", "", "", ""],
+            "default": 10,
+            "description": "Maximum number of auto-generated snapshots per file (0 = unlimited)"
+          },
+          "sourceTracker.snapshots.maxAutoSnapshotSize": {
+            "order": 6,
+            "type": "integer",
+            "minimum": 0,
+            "default": 256,
+            "description": "Controls the maximum size of a file (in KB) allowed for auto triggered snapshots."
+          },
+          "sourceTracker.snapshots.triggersExclude": {
+            "order": 7,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "Configure [glob patterns](https://code.visualstudio.com/docs/editor/glob-patterns) for excluding files and folders from automatic snapshot triggers",
+            "description": "File glob patterns to ignore for snapshot triggers"
           }
         }
       }
@@ -232,10 +455,6 @@
       ],
       "commandPalette": [
         {
-          "command": "sourceTracker.toggleTreeColor",
-          "when": "false"
-        },
-        {
           "command": "sourceTracker.diffFileSnapshot",
           "when": "false"
         },
@@ -250,12 +469,12 @@
     "compile-assets": "node scripts/compile-assets-icons.mjs",
     "compile": "tsc -p . --skipLibCheck",
     "watch": "tsc -w -p .",
-    "package": "npm run compile-assets && npm run compile && vsce package --allow-missing-repository",
+    "package": "npm run compile-assets && npm run compile && vsce package --allow-missing-repository --pre-release",
     "package-install": "npm run package && code --force --install-extension bitbased-source-tracker-$(node -e \"console.log(require('./package.json').version)\").vsix"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
-    "@types/vscode": "^1.50.0",
+    "@types/vscode": "^1.99.1",
     "fantasticon": "^3.0.0",
     "typescript": "^4.0.0"
   },
